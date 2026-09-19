@@ -1,0 +1,546 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-config
+  namespace: social-protection
+data:
+  dynamicconfig.yaml: |
+    # Temporal Dynamic Configuration for HA
+    frontend.keepAliveMaxConnectionAge:
+      - value: "5m"
+    frontend.keepAliveMaxConnectionAgeGrace:
+      - value: "70s"
+    history.defaultActivityRetryPolicy:
+      - value:
+          InitialIntervalInSeconds: 1
+          MaximumIntervalInSeconds: 100
+          BackoffCoefficient: 2
+          MaximumAttempts: 0
+    history.defaultWorkflowRetryPolicy:
+      - value:
+          InitialIntervalInSeconds: 1
+          MaximumIntervalInSeconds: 100
+          BackoffCoefficient: 2
+          MaximumAttempts: 0
+    system.forceSearchAttributesCacheRefreshOnRead:
+      - value: true
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: temporal-db-secret
+  namespace: social-protection
+type: Opaque
+stringData:
+  password: "temporal-ha-password-change-me"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-db-headless
+  namespace: social-protection
+  labels:
+    app: temporal-db
+spec:
+  ports:
+  - port: 5432
+    name: postgres
+  clusterIP: None
+  selector:
+    app: temporal-db
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: temporal-db
+  namespace: social-protection
+spec:
+  serviceName: temporal-db-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: temporal-db
+  template:
+    metadata:
+      labels:
+        app: temporal-db
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - temporal-db
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: temporal
+        - name: POSTGRES_USER
+          value: temporal
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-db-secret
+              key: password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - temporal
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - temporal
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-frontend
+  namespace: social-protection
+  labels:
+    app: temporal
+    component: frontend
+spec:
+  ports:
+  - port: 7233
+    name: grpc
+  selector:
+    app: temporal
+    component: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-frontend
+  namespace: social-protection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: temporal
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: temporal
+        component: frontend
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - temporal
+                - key: component
+                  operator: In
+                  values:
+                  - frontend
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: temporal-frontend
+        image: temporalio/server:1.22.4
+        ports:
+        - containerPort: 7233
+          name: grpc
+        env:
+        - name: SERVICES
+          value: frontend
+        - name: DB
+          value: postgresql
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: temporal
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-db-secret
+              key: password
+        - name: POSTGRES_SEEDS
+          value: temporal-db-0.temporal-db-headless
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: /etc/temporal/config/dynamicconfig.yaml
+        - name: NUM_HISTORY_SHARDS
+          value: "512"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2
+            memory: 2Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/temporal/config
+        readinessProbe:
+          exec:
+            command:
+            - tctl
+            - --address
+            - localhost:7233
+            - cluster
+            - health
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - tctl
+            - --address
+            - localhost:7233
+            - cluster
+            - health
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-history
+  namespace: social-protection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: temporal
+      component: history
+  template:
+    metadata:
+      labels:
+        app: temporal
+        component: history
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - temporal
+                - key: component
+                  operator: In
+                  values:
+                  - history
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: temporal-history
+        image: temporalio/server:1.22.4
+        env:
+        - name: SERVICES
+          value: history
+        - name: DB
+          value: postgresql
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: temporal
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-db-secret
+              key: password
+        - name: POSTGRES_SEEDS
+          value: temporal-db-0.temporal-db-headless
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: /etc/temporal/config/dynamicconfig.yaml
+        - name: NUM_HISTORY_SHARDS
+          value: "512"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/temporal/config
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-matching
+  namespace: social-protection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: temporal
+      component: matching
+  template:
+    metadata:
+      labels:
+        app: temporal
+        component: matching
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - temporal
+                - key: component
+                  operator: In
+                  values:
+                  - matching
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: temporal-matching
+        image: temporalio/server:1.22.4
+        env:
+        - name: SERVICES
+          value: matching
+        - name: DB
+          value: postgresql
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: temporal
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-db-secret
+              key: password
+        - name: POSTGRES_SEEDS
+          value: temporal-db-0.temporal-db-headless
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: /etc/temporal/config/dynamicconfig.yaml
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2
+            memory: 2Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/temporal/config
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-worker
+  namespace: social-protection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: temporal
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: temporal
+        component: worker
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - temporal
+                - key: component
+                  operator: In
+                  values:
+                  - worker
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: temporal-worker
+        image: temporalio/server:1.22.4
+        env:
+        - name: SERVICES
+          value: worker
+        - name: DB
+          value: postgresql
+        - name: DB_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: temporal
+        - name: POSTGRES_PWD
+          valueFrom:
+            secretKeyRef:
+              name: temporal-db-secret
+              key: password
+        - name: POSTGRES_SEEDS
+          value: temporal-db-0.temporal-db-headless
+        - name: DYNAMIC_CONFIG_FILE_PATH
+          value: /etc/temporal/config/dynamicconfig.yaml
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2
+            memory: 2Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/temporal/config
+      volumes:
+      - name: config
+        configMap:
+          name: temporal-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  namespace: social-protection
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: temporal-ui
+  template:
+    metadata:
+      labels:
+        app: temporal-ui
+    spec:
+      containers:
+      - name: temporal-ui
+        image: temporalio/ui:2.21.3
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: TEMPORAL_ADDRESS
+          value: temporal-frontend:7233
+        - name: TEMPORAL_CORS_ORIGINS
+          value: "*"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+  namespace: social-protection
+spec:
+  ports:
+  - port: 8080
+    name: http
+  selector:
+    app: temporal-ui
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: temporal-frontend-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: temporal
+      component: frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: temporal-history-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: temporal
+      component: history
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: temporal-db-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: temporal-db

@@ -1,0 +1,412 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: admin-portal
+  namespace: social-protection
+  labels:
+    app: admin-portal
+    app.kubernetes.io/name: admin-portal
+    app.kubernetes.io/part-of: social-protection
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: admin-portal
+  template:
+    metadata:
+      labels:
+        app: admin-portal
+        version: "{{ .Values.image.tag }}"
+    spec:
+      serviceAccountName: admin-portal
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: admin-portal
+          image: gcr.io/project/admin-portal:latest
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              value: production
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: admin-portal
+                topologyKey: kubernetes.io/hostname
+  strategy:
+    canary:
+      maxSurge: "25%"
+      maxUnavailable: 0
+      canaryService: admin-portal-canary
+      stableService: admin-portal-stable
+      trafficRouting:
+        nginx:
+          stableIngress: admin-portal-ingress
+          annotationPrefix: nginx.ingress.kubernetes.io
+      steps:
+        # Step 1: Deploy canary with 5% traffic
+        - setWeight: 5
+        - pause: { duration: 2m }
+        # Step 2: Run analysis
+        - analysis:
+            templates:
+              - templateName: success-rate
+              - templateName: latency
+            args:
+              - name: service-name
+                value: admin-portal-canary
+        # Step 3: Increase to 25%
+        - setWeight: 25
+        - pause: { duration: 5m }
+        # Step 4: Run analysis again
+        - analysis:
+            templates:
+              - templateName: success-rate
+              - templateName: latency
+        # Step 5: Increase to 50%
+        - setWeight: 50
+        - pause: { duration: 5m }
+        # Step 6: Final analysis
+        - analysis:
+            templates:
+              - templateName: success-rate
+              - templateName: latency
+        # Step 7: Increase to 75%
+        - setWeight: 75
+        - pause: { duration: 5m }
+        # Step 8: Full rollout
+        - setWeight: 100
+      analysis:
+        successfulRunHistoryLimit: 3
+        unsuccessfulRunHistoryLimit: 3
+      antiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          weight: 100
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: social-protection
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: success-rate
+      interval: 30s
+      count: 5
+      successCondition: result[0] >= 0.99
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}", code=~"2.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[5m]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: latency
+  namespace: social-protection
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: latency-p99
+      interval: 30s
+      count: 5
+      successCondition: result[0] < 0.5
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{service="{{args.service-name}}"}[5m])) by (le)
+            )
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: error-rate
+  namespace: social-protection
+spec:
+  args:
+    - name: service-name
+  metrics:
+    - name: error-rate
+      interval: 30s
+      count: 5
+      successCondition: result[0] < 0.01
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}", code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[5m]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: orchestrator
+  namespace: social-protection
+  labels:
+    app: orchestrator
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+    spec:
+      serviceAccountName: orchestrator
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: orchestrator
+          image: gcr.io/project/orchestrator:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  strategy:
+    blueGreen:
+      activeService: orchestrator-active
+      previewService: orchestrator-preview
+      autoPromotionEnabled: false
+      scaleDownDelaySeconds: 300
+      prePromotionAnalysis:
+        templates:
+          - templateName: success-rate
+          - templateName: latency
+        args:
+          - name: service-name
+            value: orchestrator-preview
+      postPromotionAnalysis:
+        templates:
+          - templateName: success-rate
+        args:
+          - name: service-name
+            value: orchestrator-active
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: fraud-ml
+  namespace: social-protection
+  labels:
+    app: fraud-ml
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: fraud-ml
+  template:
+    metadata:
+      labels:
+        app: fraud-ml
+    spec:
+      serviceAccountName: fraud-ml
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fraud-ml
+          image: gcr.io/project/fraud-ml:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 5
+  strategy:
+    canary:
+      maxSurge: 1
+      maxUnavailable: 0
+      steps:
+        - setWeight: 10
+        - pause: { duration: 5m }
+        - analysis:
+            templates:
+              - templateName: fraud-ml-accuracy
+        - setWeight: 50
+        - pause: { duration: 10m }
+        - analysis:
+            templates:
+              - templateName: fraud-ml-accuracy
+        - setWeight: 100
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: fraud-ml-accuracy
+  namespace: social-protection
+spec:
+  metrics:
+    - name: model-accuracy
+      interval: 1m
+      count: 5
+      successCondition: result[0] >= 0.95
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            fraud_ml_model_accuracy{service="fraud-ml"}
+    - name: prediction-latency
+      interval: 1m
+      count: 5
+      successCondition: result[0] < 0.2
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.monitoring:9090
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(fraud_ml_prediction_duration_seconds_bucket[5m])) by (le)
+            )
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-portal-stable
+  namespace: social-protection
+spec:
+  selector:
+    app: admin-portal
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-portal-canary
+  namespace: social-protection
+spec:
+  selector:
+    app: admin-portal
+  ports:
+    - port: 80
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator-active
+  namespace: social-protection
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator-preview
+  namespace: social-protection
+spec:
+  selector:
+    app: orchestrator
+  ports:
+    - port: 80
+      targetPort: 8080

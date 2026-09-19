@@ -1,0 +1,242 @@
+# Service Level Objectives (SLOs) for Social Protection Platform
+# Based on critical user journeys and business requirements
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: social-protection-slos
+  namespace: social-protection
+  labels:
+    app: social-protection
+    prometheus: main
+spec:
+  groups:
+    # API Availability SLOs
+    - name: api-availability-slos
+      interval: 30s
+      rules:
+        # SLO: 99.9% API availability
+        - record: slo:api_availability:ratio
+          expr: |
+            sum(rate(http_requests_total{status!~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+        
+        - alert: APIAvailabilitySLOBreach
+          expr: slo:api_availability:ratio < 0.999
+          for: 5m
+          labels:
+            severity: critical
+            slo: api-availability
+          annotations:
+            summary: "API availability below 99.9% SLO"
+            description: "Current availability: {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/api-availability"
+
+    # Latency SLOs
+    - name: latency-slos
+      interval: 30s
+      rules:
+        # SLO: 95% of requests complete within 500ms
+        - record: slo:api_latency_p95:ratio
+          expr: |
+            histogram_quantile(0.95, 
+              sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+            ) < 0.5
+        
+        # SLO: 99% of requests complete within 2s
+        - record: slo:api_latency_p99:ratio
+          expr: |
+            histogram_quantile(0.99, 
+              sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+            ) < 2.0
+        
+        - alert: LatencyP95SLOBreach
+          expr: |
+            histogram_quantile(0.95, 
+              sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+            ) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            slo: latency-p95
+          annotations:
+            summary: "P95 latency exceeds 500ms SLO"
+            description: "Current P95 latency: {{ $value | humanizeDuration }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/latency"
+        
+        - alert: LatencyP99SLOBreach
+          expr: |
+            histogram_quantile(0.99, 
+              sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+            ) > 2.0
+          for: 5m
+          labels:
+            severity: critical
+            slo: latency-p99
+          annotations:
+            summary: "P99 latency exceeds 2s SLO"
+            description: "Current P99 latency: {{ $value | humanizeDuration }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/latency"
+
+    # Disbursement SLOs
+    - name: disbursement-slos
+      interval: 30s
+      rules:
+        # SLO: 99.99% disbursement success rate
+        - record: slo:disbursement_success:ratio
+          expr: |
+            sum(rate(disbursement_total{status="success"}[1h]))
+            /
+            sum(rate(disbursement_total[1h]))
+        
+        - alert: DisbursementSuccessSLOBreach
+          expr: slo:disbursement_success:ratio < 0.9999
+          for: 15m
+          labels:
+            severity: critical
+            slo: disbursement-success
+          annotations:
+            summary: "Disbursement success rate below 99.99% SLO"
+            description: "Current success rate: {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/disbursement"
+        
+        # SLO: Disbursements processed within 24 hours
+        - record: slo:disbursement_processing_time:ratio
+          expr: |
+            sum(rate(disbursement_processing_duration_seconds_bucket{le="86400"}[1h]))
+            /
+            sum(rate(disbursement_processing_duration_seconds_count[1h]))
+        
+        - alert: DisbursementProcessingTimeSLOBreach
+          expr: slo:disbursement_processing_time:ratio < 0.99
+          for: 1h
+          labels:
+            severity: warning
+            slo: disbursement-processing-time
+          annotations:
+            summary: "Disbursements not processed within 24h SLO"
+            description: "{{ $value | humanizePercentage }} processed within 24h"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/disbursement-processing"
+
+    # Identity Verification SLOs
+    - name: identity-verification-slos
+      interval: 30s
+      rules:
+        # SLO: 99% identity verification success rate
+        - record: slo:identity_verification_success:ratio
+          expr: |
+            sum(rate(identity_verification_total{status="success"}[1h]))
+            /
+            sum(rate(identity_verification_total[1h]))
+        
+        - alert: IdentityVerificationSLOBreach
+          expr: slo:identity_verification_success:ratio < 0.99
+          for: 15m
+          labels:
+            severity: warning
+            slo: identity-verification
+          annotations:
+            summary: "Identity verification success rate below 99% SLO"
+            description: "Current success rate: {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/identity-verification"
+        
+        # SLO: Identity verification completes within 30 seconds
+        - record: slo:identity_verification_latency:ratio
+          expr: |
+            histogram_quantile(0.95, 
+              sum(rate(identity_verification_duration_seconds_bucket[5m])) by (le)
+            ) < 30
+
+    # Sync SLOs (for offline-first mobile)
+    - name: sync-slos
+      interval: 30s
+      rules:
+        # SLO: 99.9% sync success rate
+        - record: slo:sync_success:ratio
+          expr: |
+            sum(rate(sync_total{status="success"}[1h]))
+            /
+            sum(rate(sync_total[1h]))
+        
+        - alert: SyncSuccessSLOBreach
+          expr: slo:sync_success:ratio < 0.999
+          for: 15m
+          labels:
+            severity: warning
+            slo: sync-success
+          annotations:
+            summary: "Sync success rate below 99.9% SLO"
+            description: "Current success rate: {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/sync"
+        
+        # SLO: Conflicts resolved within 1 hour
+        - record: slo:conflict_resolution_time:ratio
+          expr: |
+            sum(rate(conflict_resolution_duration_seconds_bucket{le="3600"}[1h]))
+            /
+            sum(rate(conflict_resolution_duration_seconds_count[1h]))
+
+    # Error Budget Tracking
+    - name: error-budget
+      interval: 1m
+      rules:
+        # 30-day error budget for API availability (99.9% SLO = 0.1% budget)
+        - record: slo:api_error_budget:remaining
+          expr: |
+            1 - (
+              (1 - slo:api_availability:ratio) 
+              / 
+              (1 - 0.999)
+            )
+        
+        - alert: ErrorBudgetExhausted
+          expr: slo:api_error_budget:remaining < 0
+          for: 5m
+          labels:
+            severity: critical
+            slo: error-budget
+          annotations:
+            summary: "API error budget exhausted"
+            description: "Error budget is {{ $value | humanizePercentage }} (negative means exhausted)"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/error-budget"
+        
+        - alert: ErrorBudgetLow
+          expr: slo:api_error_budget:remaining < 0.25
+          for: 15m
+          labels:
+            severity: warning
+            slo: error-budget
+          annotations:
+            summary: "API error budget below 25%"
+            description: "Error budget remaining: {{ $value | humanizePercentage }}"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/error-budget"
+
+    # Business Metrics SLOs
+    - name: business-slos
+      interval: 1m
+      rules:
+        # SLO: Beneficiary enrollment completes within 7 days
+        - record: slo:enrollment_completion_time:ratio
+          expr: |
+            sum(rate(enrollment_completion_duration_seconds_bucket{le="604800"}[24h]))
+            /
+            sum(rate(enrollment_completion_duration_seconds_count[24h]))
+        
+        # SLO: Grievance response within 48 hours
+        - record: slo:grievance_response_time:ratio
+          expr: |
+            sum(rate(grievance_response_duration_seconds_bucket{le="172800"}[24h]))
+            /
+            sum(rate(grievance_response_duration_seconds_count[24h]))
+        
+        - alert: GrievanceResponseTimeSLOBreach
+          expr: slo:grievance_response_time:ratio < 0.95
+          for: 1h
+          labels:
+            severity: warning
+            slo: grievance-response
+          annotations:
+            summary: "Grievance response time below 95% within 48h SLO"
+            description: "{{ $value | humanizePercentage }} responded within 48h"
+            runbook_url: "https://docs.socialprotection.gov/runbooks/grievance"

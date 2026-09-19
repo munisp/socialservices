@@ -1,0 +1,472 @@
+version: '3.8'
+
+services:
+  # ========== Database Services ==========
+  mysql:
+    image: mysql:8.0
+    container_name: sp-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: social_protection
+      MYSQL_USER: sp_user
+      MYSQL_PASSWORD: sp_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./drizzle:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sp-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: sp-redis
+    command: redis-server --appendonly yes --requirepass redispassword
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redispassword", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sp-network
+
+  # ========== Message Queue Services ==========
+  kafka:
+    image: bitnami/kafka:3.6
+    container_name: sp-kafka
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sp-network
+
+  # ========== Workflow Orchestration ==========
+  temporal:
+    image: temporalio/auto-setup:1.22
+    container_name: sp-temporal
+    environment:
+      - DB=mysql
+      - MYSQL_USER=root
+      - MYSQL_PWD=rootpassword
+      - MYSQL_SEEDS=mysql
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml
+    ports:
+      - "7233:7233"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - sp-network
+
+  temporal-ui:
+    image: temporalio/ui:2.21.3
+    container_name: sp-temporal-ui
+    environment:
+      - TEMPORAL_ADDRESS=temporal:7233
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    ports:
+      - "8080:8080"
+    depends_on:
+      - temporal
+    networks:
+      - sp-network
+
+  # ========== Identity & Access Management ==========
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: sp-keycloak
+    command: start-dev --import-realm
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=mysql
+      - KC_DB_URL=jdbc:mysql://mysql:3306/keycloak
+      - KC_DB_USERNAME=root
+      - KC_DB_PASSWORD=rootpassword
+    ports:
+      - "8081:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./k8s/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - sp-network
+
+  permify:
+    image: ghcr.io/permify/permify:latest
+    container_name: sp-permify
+    command: serve
+    environment:
+      - PERMIFY_DATABASE_ENGINE=postgres
+      - PERMIFY_DATABASE_URI=postgres://postgres:postgres@permify-db:5432/permify?sslmode=disable
+    ports:
+      - "3476:3476"
+      - "3478:3478"
+    depends_on:
+      - permify-db
+    networks:
+      - sp-network
+
+  permify-db:
+    image: postgres:15-alpine
+    container_name: sp-permify-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=permify
+    volumes:
+      - permify_data:/var/lib/postgresql/data
+    networks:
+      - sp-network
+
+  # ========== API Gateway ==========
+  apisix:
+    image: apache/apisix:3.7.0-debian
+    container_name: sp-apisix
+    volumes:
+      - ./k8s/apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+    ports:
+      - "9080:9080"
+      - "9443:9443"
+      - "9180:9180"
+    depends_on:
+      - apisix-etcd
+    networks:
+      - sp-network
+
+  apisix-etcd:
+    image: bitnami/etcd:3.5
+    container_name: sp-apisix-etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://apisix-etcd:2379
+    volumes:
+      - etcd_data:/bitnami/etcd
+    networks:
+      - sp-network
+
+  # ========== Financial Ledger ==========
+  tigerbeetle:
+    image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+    container_name: sp-tigerbeetle
+    command: start --addresses=0.0.0.0:3000 /data/0_0.tigerbeetle
+    ports:
+      - "3000:3000"
+    volumes:
+      - tigerbeetle_data:/data
+    networks:
+      - sp-network
+
+  # ========== Observability ==========
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: sp-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./k8s/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - sp-network
+
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: sp-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - sp-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.52
+    container_name: sp-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - sp-network
+
+  # ========== Object Storage (RustFS - S3-compatible, 2.3x faster than MinIO) ==========
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: sp-rustfs
+    command: server /data --console-address ":9001"
+    environment:
+      - RUSTFS_ROOT_USER=rustfsadmin
+      - RUSTFS_ROOT_PASSWORD=rustfsadmin
+      - RUSTFS_BROWSER=on
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - rustfs_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - sp-network
+
+  # ========== Object Storage Backup (MinIO - kept for rollback) ==========
+  # Uncomment to enable MinIO as fallback
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: sp-minio
+  #   command: server /data --console-address ":9002"
+  #   environment:
+  #     - MINIO_ROOT_USER=minioadmin
+  #     - MINIO_ROOT_PASSWORD=minioadmin
+  #   ports:
+  #     - "9010:9000"
+  #     - "9002:9001"
+  #   volumes:
+  #     - minio_data:/data
+  #   networks:
+  #     - sp-network
+
+  # ========== HashiCorp Vault (Encryption at Rest Key Management) ==========
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: sp-vault
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=dev-root-token
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+      - VAULT_ADDR=http://127.0.0.1:8200
+    ports:
+      - "8200:8200"
+    volumes:
+      - vault_data:/vault/data
+    command: server -dev
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - sp-network
+
+  vault-init:
+    image: hashicorp/vault:1.15
+    container_name: sp-vault-init
+    environment:
+      - VAULT_ADDR=http://vault:8200
+      - VAULT_TOKEN=dev-root-token
+    depends_on:
+      vault:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: |
+      -c "
+      sleep 5
+      vault secrets enable -path=transit transit || true
+      vault write -f transit/keys/social-protection-pii type=aes256-gcm96
+      vault write -f transit/keys/social-protection-s3 type=aes256-gcm96
+      vault write -f transit/keys/social-protection-backup type=aes256-gcm96
+      echo 'Vault Transit keys configured'
+      "
+    networks:
+      - sp-network
+
+  # ========== OpenLane GRC Platform ==========
+  openlane:
+    image: ghcr.io/theopenlane/core:latest
+    container_name: sp-openlane
+    environment:
+      - OPENLANE_SERVER_HOST=0.0.0.0
+      - OPENLANE_SERVER_PORT=17608
+      - OPENLANE_SERVER_DEBUG=true
+      - OPENLANE_DB_HOST=openlane-db
+      - OPENLANE_DB_PORT=5432
+      - OPENLANE_DB_NAME=openlane
+      - OPENLANE_DB_USERNAME=openlane
+      - OPENLANE_DB_PASSWORD=openlane
+      - OPENLANE_REDIS_HOST=openlane-redis
+      - OPENLANE_REDIS_PORT=6379
+    ports:
+      - "17608:17608"
+    depends_on:
+      - openlane-db
+      - openlane-redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:17608/livez"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - sp-network
+
+  openlane-db:
+    image: postgres:16-alpine
+    container_name: sp-openlane-db
+    environment:
+      - POSTGRES_USER=openlane
+      - POSTGRES_PASSWORD=openlane
+      - POSTGRES_DB=openlane
+    volumes:
+      - openlane_db_data:/var/lib/postgresql/data
+    networks:
+      - sp-network
+
+  openlane-redis:
+    image: redis:7-alpine
+    container_name: sp-openlane-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - openlane_redis_data:/data
+    networks:
+      - sp-network
+
+  # ========== Fraud ML Service ==========
+  fraud-ml:
+    build:
+      context: ./services/fraud-ml
+      dockerfile: Dockerfile
+    container_name: sp-fraud-ml
+    environment:
+      - MODEL_VERSION=v1.0.0
+      - SCORE_THRESHOLD_HIGH=0.8
+      - SCORE_THRESHOLD_MEDIUM=0.5
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sp-network
+
+  # ========== Rust Services (High-Performance Storage & Processing) ==========
+  storage-gateway:
+    build:
+      context: ./rust-services/storage-gateway
+      dockerfile: Dockerfile
+    container_name: sp-storage-gateway
+    environment:
+      - PORT=8090
+      - S3_ENDPOINT=http://rustfs:9000
+      - S3_ACCESS_KEY=rustfsadmin
+      - S3_SECRET_KEY=rustfsadmin
+      - S3_REGION=us-east-1
+      - DEFAULT_BUCKET=documents
+      - MAX_UPLOAD_SIZE_MB=100
+      - RUST_LOG=info
+    ports:
+      - "8090:8090"
+    depends_on:
+      - rustfs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sp-network
+
+  document-processor:
+    build:
+      context: ./rust-services/document-processor
+      dockerfile: Dockerfile
+    container_name: sp-document-processor
+    environment:
+      - PORT=8091
+      - S3_ENDPOINT=http://rustfs:9000
+      - S3_ACCESS_KEY=rustfsadmin
+      - S3_SECRET_KEY=rustfsadmin
+      - S3_REGION=us-east-1
+      - DOCUMENTS_BUCKET=documents
+      - THUMBNAILS_BUCKET=thumbnails
+      - RUST_LOG=info
+    ports:
+      - "8091:8091"
+    depends_on:
+      - rustfs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - sp-network
+
+  etl-worker:
+    build:
+      context: ./rust-services/etl-worker
+      dockerfile: Dockerfile
+    container_name: sp-etl-worker
+    environment:
+      - S3_ENDPOINT=http://rustfs:9000
+      - S3_ACCESS_KEY=rustfsadmin
+      - S3_SECRET_KEY=rustfsadmin
+      - S3_REGION=us-east-1
+      - REDIS_URL=redis://:redispassword@redis:6379
+      - KAFKA_BROKERS=kafka:9092
+      - WORKER_CONCURRENCY=4
+      - RUST_LOG=info
+    depends_on:
+      - rustfs
+      - redis
+      - kafka
+    networks:
+      - sp-network
+
+volumes:
+  mysql_data:
+  redis_data:
+  kafka_data:
+  permify_data:
+  etcd_data:
+  tigerbeetle_data:
+  prometheus_data:
+  grafana_data:
+  rustfs_data:
+  minio_data:  # Kept for rollback
+  vault_data:
+  openlane_db_data:
+  openlane_redis_data:
+
+networks:
+  sp-network:
+    driver: bridge

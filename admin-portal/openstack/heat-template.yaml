@@ -1,0 +1,444 @@
+heat_template_version: 2021-04-16
+
+description: >
+  OpenStack Heat template for Social Protection Platform infrastructure.
+  Deploys a highly available Kubernetes cluster with all required services.
+
+parameters:
+  key_name:
+    type: string
+    description: Name of keypair to assign to servers
+    default: social-protection-key
+
+  image:
+    type: string
+    description: Name of image to use for servers
+    default: Ubuntu-22.04-LTS
+
+  master_flavor:
+    type: string
+    description: Flavor to use for master nodes
+    default: m1.xlarge
+
+  worker_flavor:
+    type: string
+    description: Flavor to use for worker nodes
+    default: m1.2xlarge
+
+  storage_flavor:
+    type: string
+    description: Flavor to use for storage nodes
+    default: m1.xlarge
+
+  external_network:
+    type: string
+    description: Name of external network for floating IPs
+    default: external
+
+  dns_nameservers:
+    type: comma_delimited_list
+    description: DNS nameservers for the subnet
+    default: "8.8.8.8,8.8.4.4"
+
+  master_count:
+    type: number
+    description: Number of Kubernetes master nodes
+    default: 3
+
+  worker_count:
+    type: number
+    description: Number of Kubernetes worker nodes
+    default: 5
+
+  storage_count:
+    type: number
+    description: Number of storage nodes for Ceph
+    default: 3
+
+resources:
+  # Network Infrastructure
+  network:
+    type: OS::Neutron::Net
+    properties:
+      name: social-protection-network
+      admin_state_up: true
+
+  subnet:
+    type: OS::Neutron::Subnet
+    properties:
+      name: social-protection-subnet
+      network_id: { get_resource: network }
+      cidr: 10.0.0.0/16
+      gateway_ip: 10.0.0.1
+      dns_nameservers: { get_param: dns_nameservers }
+      allocation_pools:
+        - start: 10.0.1.10
+          end: 10.0.255.250
+
+  router:
+    type: OS::Neutron::Router
+    properties:
+      name: social-protection-router
+      external_gateway_info:
+        network: { get_param: external_network }
+
+  router_interface:
+    type: OS::Neutron::RouterInterface
+    properties:
+      router_id: { get_resource: router }
+      subnet_id: { get_resource: subnet }
+
+  # Security Groups
+  master_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: social-protection-master-sg
+      description: Security group for Kubernetes master nodes
+      rules:
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_ip_prefix: 0.0.0.0/0
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 6443
+          port_range_max: 6443
+          remote_ip_prefix: 0.0.0.0/0
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 2379
+          port_range_max: 2380
+          remote_ip_prefix: 10.0.0.0/16
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 10250
+          port_range_max: 10259
+          remote_ip_prefix: 10.0.0.0/16
+        - direction: ingress
+          protocol: udp
+          port_range_min: 8472
+          port_range_max: 8472
+          remote_ip_prefix: 10.0.0.0/16
+
+  worker_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: social-protection-worker-sg
+      description: Security group for Kubernetes worker nodes
+      rules:
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_ip_prefix: 0.0.0.0/0
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 10250
+          port_range_max: 10250
+          remote_ip_prefix: 10.0.0.0/16
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 30000
+          port_range_max: 32767
+          remote_ip_prefix: 0.0.0.0/0
+        - direction: ingress
+          protocol: udp
+          port_range_min: 8472
+          port_range_max: 8472
+          remote_ip_prefix: 10.0.0.0/16
+
+  storage_security_group:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      name: social-protection-storage-sg
+      description: Security group for Ceph storage nodes
+      rules:
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 22
+          port_range_max: 22
+          remote_ip_prefix: 0.0.0.0/0
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 6789
+          port_range_max: 6789
+          remote_ip_prefix: 10.0.0.0/16
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 6800
+          port_range_max: 7300
+          remote_ip_prefix: 10.0.0.0/16
+        - direction: ingress
+          protocol: tcp
+          port_range_min: 3300
+          port_range_max: 3300
+          remote_ip_prefix: 10.0.0.0/16
+
+  # Load Balancer for API Server
+  api_lb:
+    type: OS::Octavia::LoadBalancer
+    properties:
+      name: social-protection-api-lb
+      vip_subnet: { get_resource: subnet }
+
+  api_lb_listener:
+    type: OS::Octavia::Listener
+    properties:
+      name: social-protection-api-listener
+      loadbalancer: { get_resource: api_lb }
+      protocol: TCP
+      protocol_port: 6443
+
+  api_lb_pool:
+    type: OS::Octavia::Pool
+    properties:
+      name: social-protection-api-pool
+      listener: { get_resource: api_lb_listener }
+      lb_algorithm: ROUND_ROBIN
+      protocol: TCP
+
+  api_lb_healthmonitor:
+    type: OS::Octavia::HealthMonitor
+    properties:
+      pool: { get_resource: api_lb_pool }
+      type: TCP
+      delay: 5
+      timeout: 5
+      max_retries: 3
+
+  api_lb_floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: { get_param: external_network }
+      port_id: { get_attr: [api_lb, vip_port_id] }
+
+  # Master Nodes
+  master_group:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: master_count }
+      resource_def:
+        type: OS::Nova::Server
+        properties:
+          name: social-protection-master-%index%
+          image: { get_param: image }
+          flavor: { get_param: master_flavor }
+          key_name: { get_param: key_name }
+          networks:
+            - network: { get_resource: network }
+          security_groups:
+            - { get_resource: master_security_group }
+          user_data_format: RAW
+          user_data:
+            str_replace:
+              template: |
+                #!/bin/bash
+                set -ex
+                
+                # Update system
+                apt-get update && apt-get upgrade -y
+                
+                # Install required packages
+                apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+                
+                # Disable swap
+                swapoff -a
+                sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+                
+                # Load kernel modules
+                cat <<EOF | tee /etc/modules-load.d/k8s.conf
+                overlay
+                br_netfilter
+                EOF
+                modprobe overlay
+                modprobe br_netfilter
+                
+                # Sysctl settings
+                cat <<EOF | tee /etc/sysctl.d/k8s.conf
+                net.bridge.bridge-nf-call-iptables  = 1
+                net.bridge.bridge-nf-call-ip6tables = 1
+                net.ipv4.ip_forward                 = 1
+                EOF
+                sysctl --system
+                
+                # Install containerd
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+                echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list
+                apt-get update && apt-get install -y containerd.io
+                mkdir -p /etc/containerd
+                containerd config default | tee /etc/containerd/config.toml
+                sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+                systemctl restart containerd
+                
+                # Install Kubernetes components
+                curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+                echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
+                apt-get update && apt-get install -y kubelet kubeadm kubectl
+                apt-mark hold kubelet kubeadm kubectl
+                
+                # Signal completion
+                echo "Master node setup complete" > /tmp/setup_complete
+              params:
+                $api_lb_ip: { get_attr: [api_lb, vip_address] }
+
+  # Worker Nodes
+  worker_group:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: worker_count }
+      resource_def:
+        type: OS::Nova::Server
+        properties:
+          name: social-protection-worker-%index%
+          image: { get_param: image }
+          flavor: { get_param: worker_flavor }
+          key_name: { get_param: key_name }
+          networks:
+            - network: { get_resource: network }
+          security_groups:
+            - { get_resource: worker_security_group }
+          user_data_format: RAW
+          user_data: |
+            #!/bin/bash
+            set -ex
+            
+            # Update system
+            apt-get update && apt-get upgrade -y
+            
+            # Install required packages
+            apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+            
+            # Disable swap
+            swapoff -a
+            sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+            
+            # Load kernel modules
+            cat <<EOF | tee /etc/modules-load.d/k8s.conf
+            overlay
+            br_netfilter
+            EOF
+            modprobe overlay
+            modprobe br_netfilter
+            
+            # Sysctl settings
+            cat <<EOF | tee /etc/sysctl.d/k8s.conf
+            net.bridge.bridge-nf-call-iptables  = 1
+            net.bridge.bridge-nf-call-ip6tables = 1
+            net.ipv4.ip_forward                 = 1
+            EOF
+            sysctl --system
+            
+            # Install containerd
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+            echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list
+            apt-get update && apt-get install -y containerd.io
+            mkdir -p /etc/containerd
+            containerd config default | tee /etc/containerd/config.toml
+            sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
+            systemctl restart containerd
+            
+            # Install Kubernetes components
+            curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+            echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
+            apt-get update && apt-get install -y kubelet kubeadm kubectl
+            apt-mark hold kubelet kubeadm kubectl
+            
+            # Signal completion
+            echo "Worker node setup complete" > /tmp/setup_complete
+
+  # Storage Nodes for Ceph
+  storage_group:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: storage_count }
+      resource_def:
+        type: OS::Nova::Server
+        properties:
+          name: social-protection-storage-%index%
+          image: { get_param: image }
+          flavor: { get_param: storage_flavor }
+          key_name: { get_param: key_name }
+          networks:
+            - network: { get_resource: network }
+          security_groups:
+            - { get_resource: storage_security_group }
+          block_device_mapping_v2:
+            - boot_index: 0
+              delete_on_termination: true
+              image_id: { get_param: image }
+              volume_size: 50
+            - boot_index: -1
+              delete_on_termination: true
+              volume_size: 500
+          user_data_format: RAW
+          user_data: |
+            #!/bin/bash
+            set -ex
+            
+            # Update system
+            apt-get update && apt-get upgrade -y
+            
+            # Install Ceph prerequisites
+            apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release python3-pip
+            
+            # Install cephadm
+            curl --silent --remote-name --location https://github.com/ceph/ceph/raw/quincy/src/cephadm/cephadm
+            chmod +x cephadm
+            ./cephadm add-repo --release quincy
+            ./cephadm install
+            
+            # Signal completion
+            echo "Storage node setup complete" > /tmp/setup_complete
+
+  # Volumes for persistent storage
+  master_volumes:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: master_count }
+      resource_def:
+        type: OS::Cinder::Volume
+        properties:
+          name: social-protection-master-vol-%index%
+          size: 100
+          volume_type: ssd
+
+  worker_volumes:
+    type: OS::Heat::ResourceGroup
+    properties:
+      count: { get_param: worker_count }
+      resource_def:
+        type: OS::Cinder::Volume
+        properties:
+          name: social-protection-worker-vol-%index%
+          size: 200
+          volume_type: ssd
+
+outputs:
+  api_lb_floating_ip:
+    description: Floating IP for Kubernetes API server load balancer
+    value: { get_attr: [api_lb_floating_ip, floating_ip_address] }
+
+  api_lb_vip:
+    description: VIP address for Kubernetes API server
+    value: { get_attr: [api_lb, vip_address] }
+
+  network_id:
+    description: Network ID
+    value: { get_resource: network }
+
+  subnet_id:
+    description: Subnet ID
+    value: { get_resource: subnet }
+
+  master_ips:
+    description: IP addresses of master nodes
+    value: { get_attr: [master_group, first_address] }
+
+  worker_ips:
+    description: IP addresses of worker nodes
+    value: { get_attr: [worker_group, first_address] }
+
+  storage_ips:
+    description: IP addresses of storage nodes
+    value: { get_attr: [storage_group, first_address] }

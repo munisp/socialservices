@@ -1,0 +1,389 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Require all pods to have app, version, and team labels for proper
+      identification and monitoring.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-app-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "The label 'app' is required."
+        pattern:
+          metadata:
+            labels:
+              app: "?*"
+    - name: require-version-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "The label 'version' is required."
+        pattern:
+          metadata:
+            labels:
+              version: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Require all containers to have CPU and memory limits defined to prevent
+      resource exhaustion.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-limits
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "CPU and memory limits are required for all containers."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Pod Security Standards
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/description: >-
+      Privileged containers are not allowed in the social-protection namespace.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-privileged
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Privileged containers are not allowed."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  privileged: "false"
+    - name: disallow-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Privilege escalation is not allowed."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-non-root-user
+  annotations:
+    policies.kyverno.io/title: Require Non-Root User
+    policies.kyverno.io/category: Pod Security Standards
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Containers must run as non-root user.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Containers must run as non-root user."
+        anyPattern:
+          - spec:
+              securityContext:
+                runAsNonRoot: true
+          - spec:
+              containers:
+                - securityContext:
+                    runAsNonRoot: true
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-read-only-root-filesystem
+  annotations:
+    policies.kyverno.io/title: Require Read-Only Root Filesystem
+    policies.kyverno.io/category: Pod Security Standards
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Containers should use read-only root filesystem.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-ro-rootfs
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Containers should use read-only root filesystem."
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/category: Pod Security Standards
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/description: >-
+      Host namespaces (hostNetwork, hostPID, hostIPC) are not allowed.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Host namespaces are not allowed."
+        pattern:
+          spec:
+            =(hostNetwork): "false"
+            =(hostPID): "false"
+            =(hostIPC): "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow Latest Tag
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Container images must not use the 'latest' tag.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Using 'latest' tag is not allowed. Please use a specific version tag."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-probes
+  annotations:
+    policies.kyverno.io/title: Require Probes
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Require liveness and readiness probes for all containers.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-liveness-probe
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Liveness probe is required."
+        pattern:
+          spec:
+            containers:
+              - livenessProbe:
+                  "?*": "?*"
+    - name: require-readiness-probe
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Readiness probe is required."
+        pattern:
+          spec:
+            containers:
+              - readinessProbe:
+                  "?*": "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Only allow images from approved registries.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validate-registries
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      validate:
+        message: "Images must be from approved registries: gcr.io, ghcr.io, docker.io, quay.io, or internal registry."
+        pattern:
+          spec:
+            containers:
+              - image: "gcr.io/* | ghcr.io/* | docker.io/* | quay.io/* | registry.internal.example.com/*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-default-security-context
+  annotations:
+    policies.kyverno.io/title: Add Default Security Context
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Mutate pods to add default security context if not specified.
+spec:
+  rules:
+    - name: add-security-context
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - social-protection
+      mutate:
+        patchStrategicMerge:
+          spec:
+            securityContext:
+              +(runAsNonRoot): true
+              +(seccompProfile):
+                type: RuntimeDefault
+            containers:
+              - (name): "*"
+                securityContext:
+                  +(allowPrivilegeEscalation): false
+                  +(capabilities):
+                    drop:
+                      - ALL
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-pdb
+  annotations:
+    policies.kyverno.io/title: Require PodDisruptionBudget
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Deployments with more than 1 replica should have a PodDisruptionBudget.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-pdb
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+              namespaces:
+                - social-protection
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.replicas }}"
+            operator: GreaterThan
+            value: 1
+      validate:
+        message: "Deployments with more than 1 replica should have a PodDisruptionBudget."
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.metadata.labels.app }}"
+                operator: AnyNotIn
+                value: "{{ request.context.pdb_apps }}"

@@ -1,0 +1,782 @@
+---
+# Network Policies for Social Protection Platform
+# Implements zero-trust network security with default-deny and explicit allow rules
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: social-protection
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# Allow DNS resolution for all pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: social-protection
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# API Gateway (APISIX) - Entry point for all external traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: apisix-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: apisix
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow external traffic via ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 9080
+        - protocol: TCP
+          port: 9443
+    # Allow health checks from kubelet
+    - from: []
+      ports:
+        - protocol: TCP
+          port: 9091
+  egress:
+    # Allow to backend services
+    - to:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow to etcd for configuration
+    - to:
+        - podSelector:
+            matchLabels:
+              app: etcd
+      ports:
+        - protocol: TCP
+          port: 2379
+---
+# Admin Portal Backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: admin-portal-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: admin-portal
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from APISIX
+    - from:
+        - podSelector:
+            matchLabels:
+              app: apisix
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow from Dapr sidecar
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 3500
+  egress:
+    # Allow to PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow to Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow to Kafka
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Allow to Temporal
+    - to:
+        - podSelector:
+            matchLabels:
+              app: temporal
+      ports:
+        - protocol: TCP
+          port: 7233
+    # Allow to Keycloak
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow to Permify
+    - to:
+        - podSelector:
+            matchLabels:
+              app: permify
+      ports:
+        - protocol: TCP
+          port: 3476
+    # Allow to TigerBeetle
+    - to:
+        - podSelector:
+            matchLabels:
+              app: tigerbeetle
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# Kafka Cluster
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kafka-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Allow from Temporal workers
+    - from:
+        - podSelector:
+            matchLabels:
+              app: temporal-worker
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Allow from Fluvio
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fluvio
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Allow inter-broker communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9093
+  egress:
+    # Allow inter-broker communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+        - protocol: TCP
+          port: 9093
+---
+# Redis Cluster
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow from Temporal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: temporal
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow inter-node communication (Sentinel)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 26379
+  egress:
+    # Allow inter-node communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 26379
+---
+# PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresql-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow from Temporal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: temporal
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow from Keycloak
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow from Permify
+    - from:
+        - podSelector:
+            matchLabels:
+              app: permify
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow from backup jobs
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backup-job
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress: []
+---
+# Temporal
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: temporal-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: temporal
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 7233
+    # Allow from Temporal workers
+    - from:
+        - podSelector:
+            matchLabels:
+              app: temporal-worker
+      ports:
+        - protocol: TCP
+          port: 7233
+    # Allow inter-component communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: temporal
+      ports:
+        - protocol: TCP
+          port: 7233
+        - protocol: TCP
+          port: 7234
+        - protocol: TCP
+          port: 7235
+        - protocol: TCP
+          port: 6933
+        - protocol: TCP
+          port: 6934
+        - protocol: TCP
+          port: 6935
+  egress:
+    # Allow to PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow to Redis (visibility)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    # Allow inter-component communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: temporal
+      ports:
+        - protocol: TCP
+          port: 7233
+        - protocol: TCP
+          port: 7234
+        - protocol: TCP
+          port: 7235
+---
+# Keycloak
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow from APISIX (for token validation)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: apisix
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow inter-cluster communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 7800
+        - protocol: TCP
+          port: 57800
+  egress:
+    # Allow to PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow inter-cluster communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: keycloak
+      ports:
+        - protocol: TCP
+          port: 7800
+        - protocol: TCP
+          port: 57800
+---
+# Permify
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: permify-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: permify
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 3476
+        - protocol: TCP
+          port: 3478
+  egress:
+    # Allow to PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# TigerBeetle
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tigerbeetle-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: tigerbeetle
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow from Temporal workers
+    - from:
+        - podSelector:
+            matchLabels:
+              app: temporal-worker
+      ports:
+        - protocol: TCP
+          port: 3000
+    # Allow inter-node replication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: tigerbeetle
+      ports:
+        - protocol: TCP
+          port: 3001
+  egress:
+    # Allow inter-node replication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: tigerbeetle
+      ports:
+        - protocol: TCP
+          port: 3001
+---
+# Fluvio
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: fluvio-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: fluvio
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 9003
+    # Allow inter-cluster communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: fluvio
+      ports:
+        - protocol: TCP
+          port: 9003
+        - protocol: TCP
+          port: 9005
+        - protocol: TCP
+          port: 9010
+  egress:
+    # Allow to Kafka
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Allow inter-cluster communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app: fluvio
+      ports:
+        - protocol: TCP
+          port: 9003
+        - protocol: TCP
+          port: 9005
+        - protocol: TCP
+          port: 9010
+---
+# Lakehouse (MinIO, Flink, Spark)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lakehouse-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: lakehouse
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from admin-portal
+    - from:
+        - podSelector:
+            matchLabels:
+              app: admin-portal
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 8081
+    # Allow from Flink/Spark workers
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: lakehouse
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 6123
+        - protocol: TCP
+          port: 7077
+  egress:
+    # Allow to Kafka
+    - to:
+        - podSelector:
+            matchLabels:
+              app: kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    # Allow inter-component communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: lakehouse
+      ports:
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 6123
+        - protocol: TCP
+          port: 7077
+---
+# OpenAppSec WAF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openappsec-network-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      app: openappsec
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # Allow to APISIX
+    - to:
+        - podSelector:
+            matchLabels:
+              app: apisix
+      ports:
+        - protocol: TCP
+          port: 9080
+    # Allow to management service
+    - to:
+        - podSelector:
+            matchLabels:
+              app: openappsec-mgmt
+      ports:
+        - protocol: TCP
+          port: 8888
+---
+# Dapr System Components
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dapr-network-policy
+  namespace: dapr-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dapr
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from application pods
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: social-protection
+      ports:
+        - protocol: TCP
+          port: 50001
+        - protocol: TCP
+          port: 50002
+        - protocol: TCP
+          port: 6050
+    # Allow inter-component communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dapr
+      ports:
+        - protocol: TCP
+          port: 50001
+        - protocol: TCP
+          port: 50002
+        - protocol: TCP
+          port: 6050
+  egress:
+    # Allow to application namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: social-protection
+      ports:
+        - protocol: TCP
+          port: 3500
+    # Allow inter-component communication
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dapr
+      ports:
+        - protocol: TCP
+          port: 50001
+        - protocol: TCP
+          port: 50002
+---
+# Pod Security Admission Labels for Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: social-protection
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest

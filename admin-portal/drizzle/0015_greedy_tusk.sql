@@ -1,0 +1,1 @@
+DROP TABLE `blockchain_audit_trail`;

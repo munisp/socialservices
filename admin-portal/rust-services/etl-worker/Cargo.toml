@@ -1,0 +1,74 @@
+[package]
+name = "etl-worker"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance ETL worker for social protection platform data processing"
+authors = ["Social Protection Platform Team"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# AWS S3 SDK (works with RustFS/MinIO)
+aws-sdk-s3 = "1.12"
+aws-config = "1.1"
+aws-credential-types = "1.1"
+
+# Data processing
+arrow = { version = "50.0", features = ["csv", "json", "prettyprint"] }
+parquet = { version = "50.0", features = ["async"] }
+datafusion = "34.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+csv = "1.3"
+
+# Async utilities
+futures = "0.3"
+async-stream = "0.3"
+bytes = "1.5"
+tokio-stream = "0.1"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Metrics
+prometheus = "0.13"
+lazy_static = "1.4"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# UUID generation
+uuid = { version = "1.6", features = ["v4", "serde"] }
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Message queue (Kafka)
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+
+# Redis for job queue
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+
+# HTTP client for callbacks
+reqwest = { version = "0.11", features = ["json"] }
+
+# Compression
+flate2 = "1.0"
+zstd = "0.13"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.9"
+
+[[bin]]
+name = "etl-worker"
+path = "src/main.rs"

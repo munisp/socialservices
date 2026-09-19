@@ -1,0 +1,569 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flink-config
+  namespace: social-protection
+data:
+  flink-conf.yaml: |
+    jobmanager.rpc.address: flink-jobmanager
+    jobmanager.rpc.port: 6123
+    jobmanager.memory.process.size: 2g
+    taskmanager.memory.process.size: 4g
+    taskmanager.numberOfTaskSlots: 4
+    parallelism.default: 4
+    
+    # HA Configuration
+    high-availability: kubernetes
+    high-availability.storageDir: s3://lakehouse/flink/ha
+    high-availability.cluster-id: social-protection-flink
+    kubernetes.cluster-id: social-protection-flink
+    
+    # State backend
+    state.backend: rocksdb
+    state.checkpoints.dir: s3://lakehouse/flink/checkpoints
+    state.savepoints.dir: s3://lakehouse/flink/savepoints
+    
+    # Restart strategy
+    restart-strategy: fixed-delay
+    restart-strategy.fixed-delay.attempts: 3
+    restart-strategy.fixed-delay.delay: 10s
+    
+    # Metrics
+    metrics.reporters: prometheus
+    metrics.reporter.prometheus.class: org.apache.flink.metrics.prometheus.PrometheusReporter
+    metrics.reporter.prometheus.port: 9249
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager-headless
+  namespace: social-protection
+  labels:
+    app: flink
+    component: jobmanager
+spec:
+  ports:
+  - port: 6123
+    name: rpc
+  - port: 6124
+    name: blob
+  - port: 8081
+    name: ui
+  clusterIP: None
+  selector:
+    app: flink
+    component: jobmanager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  namespace: social-protection
+  labels:
+    app: flink
+    component: jobmanager
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 8081
+    name: ui
+  - port: 6123
+    name: rpc
+  selector:
+    app: flink
+    component: jobmanager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  namespace: social-protection
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: jobmanager
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - flink
+                - key: component
+                  operator: In
+                  values:
+                  - jobmanager
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: jobmanager
+        image: flink:1.18-scala_2.12-java11
+        args: ["jobmanager"]
+        ports:
+        - containerPort: 6123
+          name: rpc
+        - containerPort: 6124
+          name: blob
+        - containerPort: 8081
+          name: ui
+        - containerPort: 9249
+          name: metrics
+        env:
+        - name: FLINK_PROPERTIES
+          value: |
+            jobmanager.rpc.address: flink-jobmanager
+            high-availability: kubernetes
+            high-availability.cluster-id: social-protection-flink
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+        volumeMounts:
+        - name: config
+          mountPath: /opt/flink/conf/flink-conf.yaml
+          subPath: flink-conf.yaml
+        readinessProbe:
+          httpGet:
+            path: /overview
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /overview
+            port: 8081
+          initialDelaySeconds: 60
+          periodSeconds: 15
+      volumes:
+      - name: config
+        configMap:
+          name: flink-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  namespace: social-protection
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+  template:
+    metadata:
+      labels:
+        app: flink
+        component: taskmanager
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - flink
+                - key: component
+                  operator: In
+                  values:
+                  - taskmanager
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: taskmanager
+        image: flink:1.18-scala_2.12-java11
+        args: ["taskmanager"]
+        ports:
+        - containerPort: 6122
+          name: rpc
+        - containerPort: 9249
+          name: metrics
+        env:
+        - name: FLINK_PROPERTIES
+          value: |
+            jobmanager.rpc.address: flink-jobmanager
+            taskmanager.numberOfTaskSlots: 4
+        resources:
+          requests:
+            cpu: 1
+            memory: 4Gi
+          limits:
+            cpu: 4
+            memory: 8Gi
+        volumeMounts:
+        - name: config
+          mountPath: /opt/flink/conf/flink-conf.yaml
+          subPath: flink-conf.yaml
+        readinessProbe:
+          tcpSocket:
+            port: 6122
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 6122
+          initialDelaySeconds: 60
+          periodSeconds: 15
+      volumes:
+      - name: config
+        configMap:
+          name: flink-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spark-config
+  namespace: social-protection
+data:
+  spark-defaults.conf: |
+    spark.master                     k8s://https://kubernetes.default.svc
+    spark.kubernetes.container.image spark:3.5.0
+    spark.kubernetes.namespace       social-protection
+    spark.driver.memory              4g
+    spark.executor.memory            4g
+    spark.executor.instances         4
+    spark.sql.extensions             io.delta.sql.DeltaSparkSessionExtension
+    spark.sql.catalog.spark_catalog  org.apache.spark.sql.delta.catalog.DeltaCatalog
+    spark.hadoop.fs.s3a.impl         org.apache.hadoop.fs.s3a.S3AFileSystem
+    spark.hadoop.fs.s3a.endpoint     http://rustfs.social-protection.svc.cluster.local:9000
+    spark.hadoop.fs.s3a.path.style.access true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-history-server
+  namespace: social-protection
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: spark-history-server
+  template:
+    metadata:
+      labels:
+        app: spark-history-server
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - spark-history-server
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: spark-history-server
+        image: bitnami/spark:3.5.0
+        command:
+        - /opt/bitnami/spark/sbin/start-history-server.sh
+        ports:
+        - containerPort: 18080
+          name: http
+        env:
+        - name: SPARK_HISTORY_OPTS
+          value: "-Dspark.history.fs.logDirectory=s3a://lakehouse/spark/history"
+        resources:
+          requests:
+            cpu: 250m
+            memory: 1Gi
+          limits:
+            cpu: 1
+            memory: 2Gi
+        volumeMounts:
+        - name: config
+          mountPath: /opt/bitnami/spark/conf/spark-defaults.conf
+          subPath: spark-defaults.conf
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 18080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 18080
+          initialDelaySeconds: 60
+          periodSeconds: 15
+      volumes:
+      - name: config
+        configMap:
+          name: spark-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-history-server
+  namespace: social-protection
+spec:
+  ports:
+  - port: 18080
+    name: http
+  selector:
+    app: spark-history-server
+---
+# ========== RustFS Object Storage (S3-compatible, 2.3x faster than MinIO) ==========
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rustfs-secret
+  namespace: social-protection
+type: Opaque
+stringData:
+  root-user: "rustfs-admin"
+  root-password: "rustfs-password-change-me"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs-headless
+  namespace: social-protection
+  labels:
+    app: rustfs
+spec:
+  ports:
+  - port: 9000
+    name: api
+  - port: 9001
+    name: console
+  clusterIP: None
+  selector:
+    app: rustfs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rustfs
+  namespace: social-protection
+  labels:
+    app: rustfs
+spec:
+  ports:
+  - port: 9000
+    name: api
+  - port: 9001
+    name: console
+  selector:
+    app: rustfs
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rustfs
+  namespace: social-protection
+spec:
+  serviceName: rustfs-headless
+  replicas: 4
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: rustfs
+  template:
+    metadata:
+      labels:
+        app: rustfs
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - rustfs
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: rustfs
+        image: rustfs/rustfs:latest
+        args:
+        - server
+        - http://rustfs-{0...3}.rustfs-headless.social-protection.svc.cluster.local/data
+        - --console-address
+        - ":9001"
+        ports:
+        - containerPort: 9000
+          name: api
+        - containerPort: 9001
+          name: console
+        env:
+        - name: RUSTFS_ROOT_USER
+          valueFrom:
+            secretKeyRef:
+              name: rustfs-secret
+              key: root-user
+        - name: RUSTFS_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rustfs-secret
+              key: root-password
+        - name: RUSTFS_BROWSER
+          value: "on"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2
+            memory: 4Gi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 9000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /minio/health/live
+            port: 9000
+          initialDelaySeconds: 60
+          periodSeconds: 15
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 500Gi
+---
+# ========== MinIO Backup (kept for rollback - uncomment if needed) ==========
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: minio-secret
+#   namespace: social-protection
+# type: Opaque
+# stringData:
+#   root-user: "minio-admin"
+#   root-password: "minio-password-change-me"
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: minio-headless
+#   namespace: social-protection
+#   labels:
+#     app: minio
+# spec:
+#   ports:
+#   - port: 9000
+#     name: api
+#   - port: 9001
+#     name: console
+#   clusterIP: None
+#   selector:
+#     app: minio
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: minio
+#   namespace: social-protection
+#   labels:
+#     app: minio
+# spec:
+#   ports:
+#   - port: 9000
+#     name: api
+#   - port: 9001
+#     name: console
+#   selector:
+#     app: minio
+# ---
+# apiVersion: apps/v1
+# kind: StatefulSet
+# metadata:
+#   name: minio
+#   namespace: social-protection
+# spec:
+#   serviceName: minio-headless
+#   replicas: 4
+#   podManagementPolicy: Parallel
+#   selector:
+#     matchLabels:
+#       app: minio
+#   template:
+#     metadata:
+#       labels:
+#         app: minio
+#     spec:
+#       containers:
+#       - name: minio
+#         image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+#         args:
+#         - server
+#         - http://minio-{0...3}.minio-headless.social-protection.svc.cluster.local/data
+#         - --console-address
+#         - ":9001"
+#         env:
+#         - name: MINIO_ROOT_USER
+#           valueFrom:
+#             secretKeyRef:
+#               name: minio-secret
+#               key: root-user
+#         - name: MINIO_ROOT_PASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: minio-secret
+#               key: root-password
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flink-jobmanager-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: flink
+      component: jobmanager
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flink-taskmanager-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: flink
+      component: taskmanager
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: rustfs-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 3
+  selector:
+    matchLabels:
+      app: rustfs

@@ -1,0 +1,286 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openappsec
+  labels:
+    app.kubernetes.io/name: openappsec
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openappsec-config
+  namespace: openappsec
+data:
+  local_policy.yaml: |
+    policies:
+      - name: social-protection-policy
+        mode: prevent-learn
+        practices:
+          - web-attacks
+          - api-attacks
+          - bot-detection
+          - rate-limiting
+        triggers:
+          - log
+          - block
+        
+    practices:
+      - name: web-attacks
+        web-attacks:
+          override-mode: prevent-learn
+          minimum-confidence: medium
+          max-body-size-kb: 1000000
+          max-header-size-kb: 102400
+          max-object-depth: 40
+          max-url-size-kb: 32000
+          
+      - name: api-attacks
+        api-attacks:
+          override-mode: prevent-learn
+          
+      - name: bot-detection
+        anti-bot:
+          override-mode: prevent-learn
+          injected-URIs: []
+          validated-URIs: []
+          
+      - name: rate-limiting
+        rate-limit:
+          rules:
+            - name: global-rate-limit
+              uri: "/*"
+              limit: 1000
+              scope: minute
+              
+    log-triggers:
+      - name: log
+        verbosity: extended
+        extended-logging: true
+        log-destination:
+          - cloud
+          - local
+          
+    exceptions:
+      - name: health-checks
+        match:
+          - uri: /health
+          - uri: /healthz
+          - uri: /ready
+          - uri: /metrics
+        action: accept
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openappsec-agent-secret
+  namespace: openappsec
+type: Opaque
+stringData:
+  agent-token: "openappsec-agent-token-change-me"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openappsec-agent
+  namespace: openappsec
+  labels:
+    app: openappsec-agent
+spec:
+  ports:
+  - port: 80
+    name: http
+    targetPort: 80
+  - port: 443
+    name: https
+    targetPort: 443
+  selector:
+    app: openappsec-agent
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: openappsec-agent
+  namespace: openappsec
+  labels:
+    app: openappsec-agent
+spec:
+  selector:
+    matchLabels:
+      app: openappsec-agent
+  template:
+    metadata:
+      labels:
+        app: openappsec-agent
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: openappsec-agent
+        image: ghcr.io/openappsec/agent:1.0.2
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 443
+          name: https
+        env:
+        - name: AGENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: openappsec-agent-secret
+              key: agent-token
+        - name: LEARNING_MODE
+          value: "true"
+        - name: LOG_LEVEL
+          value: "info"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/cp/conf/local_policy.yaml
+          subPath: local_policy.yaml
+        - name: logs
+          mountPath: /var/log/nano_agent
+        securityContext:
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 60
+          periodSeconds: 15
+      volumes:
+      - name: config
+        configMap:
+          name: openappsec-config
+      - name: logs
+        emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openappsec-management
+  namespace: openappsec
+  labels:
+    app: openappsec-management
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: openappsec-management
+  template:
+    metadata:
+      labels:
+        app: openappsec-management
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - openappsec-management
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: management
+        image: ghcr.io/openappsec/smartsync:1.0.2
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: AGENT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: openappsec-agent-secret
+              key: agent-token
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openappsec-management
+  namespace: openappsec
+spec:
+  ports:
+  - port: 8080
+    name: http
+  selector:
+    app: openappsec-management
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: social-protection-ingress
+  namespace: social-protection
+  annotations:
+    kubernetes.io/ingress.class: openappsec
+    openappsec.io/policy: social-protection-policy
+    openappsec.io/mode: prevent-learn
+spec:
+  rules:
+  - host: api.social-protection.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: apisix
+            port:
+              number: 80
+  - host: admin.social-protection.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: admin-portal
+            port:
+              number: 3000
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: openappsec-management-pdb
+  namespace: openappsec
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: openappsec-management

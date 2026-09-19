@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # Apache Flink JobManager
+  flink-jobmanager:
+    image: flink:1.18-scala_2.12-java11
+    container_name: flink-jobmanager
+    ports:
+      - "8081:8081"  # Web UI
+      - "6123:6123"  # RPC
+    command: jobmanager
+    environment:
+      - FLINK_PROPERTIES=jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        parallelism.default: 2
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+        state.savepoints.dir: file:///tmp/flink-savepoints
+        execution.checkpointing.interval: 60000
+        execution.checkpointing.mode: EXACTLY_ONCE
+        execution.checkpointing.timeout: 600000
+    volumes:
+      - flink-jobmanager-data:/tmp
+      - ./flink-jobs:/opt/flink/jobs
+    networks:
+      - lakehouse
+
+  # Apache Flink TaskManager 1
+  flink-taskmanager-1:
+    image: flink:1.18-scala_2.12-java11
+    container_name: flink-taskmanager-1
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      - FLINK_PROPERTIES=jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 4096m
+    volumes:
+      - flink-taskmanager-1-data:/tmp
+    networks:
+      - lakehouse
+
+  # Apache Flink TaskManager 2
+  flink-taskmanager-2:
+    image: flink:1.18-scala_2.12-java11
+    container_name: flink-taskmanager-2
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      - FLINK_PROPERTIES=jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 4096m
+    volumes:
+      - flink-taskmanager-2-data:/tmp
+    networks:
+      - lakehouse
+
+volumes:
+  flink-jobmanager-data:
+  flink-taskmanager-1-data:
+  flink-taskmanager-2-data:
+
+networks:
+  lakehouse:
+    external: true

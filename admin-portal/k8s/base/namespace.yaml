@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: social-protection
+  labels:
+    app.kubernetes.io/name: social-protection-platform
+    app.kubernetes.io/part-of: social-protection
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: social-protection-quota
+  namespace: social-protection
+spec:
+  hard:
+    requests.cpu: "100"
+    requests.memory: 200Gi
+    limits.cpu: "200"
+    limits.memory: 400Gi
+    persistentvolumeclaims: "50"
+    pods: "200"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: social-protection-limits
+  namespace: social-protection
+spec:
+  limits:
+  - default:
+      cpu: "1"
+      memory: 1Gi
+    defaultRequest:
+      cpu: 100m
+      memory: 256Mi
+    type: Container

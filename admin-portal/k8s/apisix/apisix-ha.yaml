@@ -1,0 +1,338 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: apisix-config
+  namespace: social-protection
+data:
+  config.yaml: |
+    apisix:
+      node_listen: 9080
+      enable_ipv6: false
+      enable_admin: true
+      admin_key:
+        - name: admin
+          key: edd1c9f034335f136f87ad84b625c8f1
+          role: admin
+      
+    etcd:
+      host:
+        - "http://etcd-0.etcd-headless:2379"
+        - "http://etcd-1.etcd-headless:2379"
+        - "http://etcd-2.etcd-headless:2379"
+      prefix: "/apisix"
+      timeout: 30
+    
+    nginx_config:
+      error_log: "/dev/stderr"
+      error_log_level: "warn"
+      worker_processes: auto
+      worker_connections: 10240
+      
+    plugins:
+      - real-ip
+      - ai
+      - client-control
+      - proxy-control
+      - request-id
+      - zipkin
+      - ext-plugin-pre-req
+      - fault-injection
+      - mocking
+      - serverless-pre-function
+      - cors
+      - ip-restriction
+      - ua-restriction
+      - referer-restriction
+      - csrf
+      - uri-blocker
+      - request-validation
+      - openid-connect
+      - authz-casbin
+      - authz-casdoor
+      - wolf-rbac
+      - ldap-auth
+      - hmac-auth
+      - basic-auth
+      - jwt-auth
+      - key-auth
+      - consumer-restriction
+      - forward-auth
+      - opa
+      - authz-keycloak
+      - proxy-mirror
+      - proxy-cache
+      - proxy-rewrite
+      - workflow
+      - api-breaker
+      - limit-conn
+      - limit-count
+      - limit-req
+      - gzip
+      - server-info
+      - traffic-split
+      - redirect
+      - response-rewrite
+      - grpc-transcode
+      - grpc-web
+      - public-api
+      - prometheus
+      - datadog
+      - echo
+      - loggly
+      - http-logger
+      - splunk-hec-logging
+      - skywalking-logger
+      - google-cloud-logging
+      - sls-logger
+      - tcp-logger
+      - kafka-logger
+      - rocketmq-logger
+      - syslog
+      - udp-logger
+      - file-logger
+      - clickhouse-logger
+      - tencent-cloud-cls
+      - inspect
+      - example-plugin
+      - aws-lambda
+      - azure-functions
+      - openwhisk
+      - openfunction
+      - serverless-post-function
+      - ext-plugin-post-req
+      - ext-plugin-post-resp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd-headless
+  namespace: social-protection
+  labels:
+    app: etcd
+spec:
+  ports:
+  - port: 2379
+    name: client
+  - port: 2380
+    name: peer
+  clusterIP: None
+  selector:
+    app: etcd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etcd
+  namespace: social-protection
+  labels:
+    app: etcd
+spec:
+  ports:
+  - port: 2379
+    name: client
+  selector:
+    app: etcd
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: etcd
+  namespace: social-protection
+spec:
+  serviceName: etcd-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: etcd
+  template:
+    metadata:
+      labels:
+        app: etcd
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - etcd
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - name: etcd
+        image: bitnami/etcd:3.5.12
+        ports:
+        - containerPort: 2379
+          name: client
+        - containerPort: 2380
+          name: peer
+        env:
+        - name: ETCD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: ETCD_INITIAL_ADVERTISE_PEER_URLS
+          value: "http://$(ETCD_NAME).etcd-headless:2380"
+        - name: ETCD_LISTEN_PEER_URLS
+          value: "http://0.0.0.0:2380"
+        - name: ETCD_LISTEN_CLIENT_URLS
+          value: "http://0.0.0.0:2379"
+        - name: ETCD_ADVERTISE_CLIENT_URLS
+          value: "http://$(ETCD_NAME).etcd-headless:2379"
+        - name: ETCD_INITIAL_CLUSTER
+          value: "etcd-0=http://etcd-0.etcd-headless:2380,etcd-1=http://etcd-1.etcd-headless:2380,etcd-2=http://etcd-2.etcd-headless:2380"
+        - name: ETCD_INITIAL_CLUSTER_STATE
+          value: "new"
+        - name: ETCD_INITIAL_CLUSTER_TOKEN
+          value: "etcd-cluster-social-protection"
+        - name: ALLOW_NONE_AUTHENTICATION
+          value: "yes"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1
+            memory: 1Gi
+        volumeMounts:
+        - name: data
+          mountPath: /bitnami/etcd
+        readinessProbe:
+          exec:
+            command:
+            - etcdctl
+            - endpoint
+            - health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          exec:
+            command:
+            - etcdctl
+            - endpoint
+            - health
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apisix
+  namespace: social-protection
+  labels:
+    app: apisix
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 9080
+    name: http
+  - port: 443
+    targetPort: 9443
+    name: https
+  - port: 9180
+    targetPort: 9180
+    name: admin
+  selector:
+    app: apisix
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: apisix
+  namespace: social-protection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: apisix
+  template:
+    metadata:
+      labels:
+        app: apisix
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - apisix
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: apisix
+        image: apache/apisix:3.8.0-debian
+        ports:
+        - containerPort: 9080
+          name: http
+        - containerPort: 9443
+          name: https
+        - containerPort: 9180
+          name: admin
+        volumeMounts:
+        - name: config
+          mountPath: /usr/local/apisix/conf/config.yaml
+          subPath: config.yaml
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 2
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /apisix/status
+            port: 9080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /apisix/status
+            port: 9080
+          initialDelaySeconds: 30
+          periodSeconds: 15
+          timeoutSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: apisix-config
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: etcd-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: etcd
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: apisix-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: apisix

@@ -1,0 +1,216 @@
+# Storage Encryption Configuration for Kubernetes
+# Provides encrypted storage classes and volume encryption
+---
+# Encrypted Storage Class for AWS EBS (gp3)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: encrypted-gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+  kmsKeyId: alias/social-protection-ebs
+  fsType: ext4
+  iops: "3000"
+  throughput: "125"
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+# Encrypted Storage Class for GCP Persistent Disk
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: encrypted-pd-ssd
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-ssd
+  disk-encryption-kms-key: projects/PROJECT_ID/locations/REGION/keyRings/social-protection/cryptoKeys/disk-encryption
+  fsType: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+# Encrypted Storage Class for Azure Managed Disk
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: encrypted-azure-disk
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: Premium_LRS
+  diskEncryptionSetID: /subscriptions/SUBSCRIPTION_ID/resourceGroups/RG_NAME/providers/Microsoft.Compute/diskEncryptionSets/social-protection-des
+  fsType: ext4
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+---
+# Vault Transit Engine Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vault-transit-config
+  namespace: social-protection
+data:
+  vault-policy.hcl: |
+    # Transit secrets engine for encryption at rest
+    path "transit/encrypt/social-protection-pii" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/social-protection-pii" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/encrypt/social-protection-s3" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/decrypt/social-protection-s3" {
+      capabilities = ["update"]
+    }
+    
+    path "transit/keys/social-protection-*" {
+      capabilities = ["read"]
+    }
+    
+    path "transit/keys/social-protection-*/rotate" {
+      capabilities = ["update"]
+    }
+    
+  vault-init.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Enable Transit secrets engine
+    vault secrets enable -path=transit transit || true
+    
+    # Create encryption keys for PII data
+    vault write -f transit/keys/social-protection-pii \
+      type=aes256-gcm96 \
+      auto_rotate_period=90d \
+      deletion_allowed=false
+    
+    # Create encryption keys for S3 objects
+    vault write -f transit/keys/social-protection-s3 \
+      type=aes256-gcm96 \
+      auto_rotate_period=90d \
+      deletion_allowed=false
+    
+    # Create encryption keys for backups
+    vault write -f transit/keys/social-protection-backup \
+      type=aes256-gcm96 \
+      auto_rotate_period=180d \
+      deletion_allowed=false
+    
+    echo "Vault Transit keys configured successfully"
+---
+# PostgreSQL Encryption Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-encryption-config
+  namespace: social-protection
+data:
+  postgresql.conf.encryption: |
+    # TLS Configuration
+    ssl = on
+    ssl_cert_file = '/etc/ssl/certs/server.crt'
+    ssl_key_file = '/etc/ssl/private/server.key'
+    ssl_ca_file = '/etc/ssl/certs/ca.crt'
+    ssl_min_protocol_version = 'TLSv1.3'
+    ssl_ciphers = 'HIGH:!aNULL:!MD5'
+    
+    # WAL Encryption (requires pgcrypto extension)
+    # Note: Full WAL encryption requires PostgreSQL Enterprise or third-party solutions
+    
+    # Connection encryption
+    password_encryption = scram-sha-256
+    
+  pg_hba.conf.encryption: |
+    # Require SSL for all connections
+    hostssl all all 0.0.0.0/0 scram-sha-256
+    hostssl all all ::/0 scram-sha-256
+    
+    # Local connections (for maintenance)
+    local all postgres peer
+---
+# Redis Encryption Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-encryption-config
+  namespace: social-protection
+data:
+  redis.conf.encryption: |
+    # TLS Configuration
+    tls-port 6379
+    port 0
+    tls-cert-file /etc/ssl/certs/redis.crt
+    tls-key-file /etc/ssl/private/redis.key
+    tls-ca-cert-file /etc/ssl/certs/ca.crt
+    tls-auth-clients yes
+    tls-protocols "TLSv1.3"
+    tls-ciphers "TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256"
+    
+    # Persistence encryption (via encrypted volume)
+    appendonly yes
+    appendfsync everysec
+    
+    # Memory protection
+    protected-mode yes
+    requirepass ${REDIS_PASSWORD}
+---
+# Encryption Secrets for development/testing
+apiVersion: v1
+kind: Secret
+metadata:
+  name: encryption-keys-dev
+  namespace: social-protection
+  annotations:
+    description: "Development encryption keys - DO NOT USE IN PRODUCTION"
+type: Opaque
+stringData:
+  # Base64-encoded 32-byte AES-256 key (for local development only)
+  ENCRYPTION_KEY: "dGhpcy1pcy1hLTMyLWJ5dGUtZGV2LWtleS0xMjM0NTY3"
+  # Note: In production, use Vault Transit or cloud KMS
+---
+# Network Policy for encryption services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: encryption-services-policy
+  namespace: social-protection
+spec:
+  podSelector:
+    matchLabels:
+      encryption: enabled
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: social-protection
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: social-protection
+      ports:
+        - protocol: TCP
+          port: 8200  # Vault
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: social-protection
+      ports:
+        - protocol: TCP
+          port: 8200  # Vault
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 6379  # Redis

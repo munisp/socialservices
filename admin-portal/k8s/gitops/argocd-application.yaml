@@ -1,0 +1,229 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: social-protection
+  namespace: argocd
+spec:
+  description: Social Protection Platform Project
+  sourceRepos:
+    - 'https://github.com/organization/social-protection-platform.git'
+  destinations:
+    - namespace: social-protection
+      server: https://kubernetes.default.svc
+    - namespace: social-protection-staging
+      server: https://kubernetes.default.svc
+    - namespace: social-protection-prod
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: 'networking.k8s.io'
+      kind: NetworkPolicy
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+  roles:
+    - name: developer
+      description: Developer access
+      policies:
+        - p, proj:social-protection:developer, applications, get, social-protection/*, allow
+        - p, proj:social-protection:developer, applications, sync, social-protection/*, allow
+      groups:
+        - social-protection-developers
+    - name: admin
+      description: Admin access
+      policies:
+        - p, proj:social-protection:admin, applications, *, social-protection/*, allow
+      groups:
+        - social-protection-admins
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: social-protection-admin-portal
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: admin-portal
+    app.kubernetes.io/part-of: social-protection
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: social-protection
+  source:
+    repoURL: https://github.com/organization/social-protection-platform.git
+    targetRevision: HEAD
+    path: admin-portal/k8s/overlays/production
+    kustomize:
+      images:
+        - admin-portal=gcr.io/project/admin-portal:latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: social-protection
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  revisionHistoryLimit: 10
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: social-protection-orchestrator
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: social-protection
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: social-protection
+  source:
+    repoURL: https://github.com/organization/social-protection-platform.git
+    targetRevision: HEAD
+    path: admin-portal/orchestrator/k8s
+    kustomize:
+      images:
+        - orchestrator=gcr.io/project/orchestrator:latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: social-protection
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: social-protection-fraud-ml
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: fraud-ml
+    app.kubernetes.io/part-of: social-protection
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: social-protection
+  source:
+    repoURL: https://github.com/organization/social-protection-platform.git
+    targetRevision: HEAD
+    path: admin-portal/services/fraud-ml/k8s
+    kustomize:
+      images:
+        - fraud-ml=gcr.io/project/fraud-ml:latest
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: social-protection
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: social-protection-infrastructure
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: infrastructure
+    app.kubernetes.io/part-of: social-protection
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: social-protection
+  source:
+    repoURL: https://github.com/organization/social-protection-platform.git
+    targetRevision: HEAD
+    path: admin-portal/k8s/infrastructure
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: social-protection
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: social-protection-environments
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - env: staging
+            namespace: social-protection-staging
+            targetRevision: develop
+            autoSync: true
+          - env: production
+            namespace: social-protection-prod
+            targetRevision: main
+            autoSync: false
+  template:
+    metadata:
+      name: 'social-protection-{{env}}'
+      namespace: argocd
+      labels:
+        environment: '{{env}}'
+    spec:
+      project: social-protection
+      source:
+        repoURL: https://github.com/organization/social-protection-platform.git
+        targetRevision: '{{targetRevision}}'
+        path: 'admin-portal/k8s/overlays/{{env}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{namespace}}'
+      syncPolicy:
+        automated:
+          prune: '{{autoSync}}'
+          selfHeal: '{{autoSync}}'
+        syncOptions:
+          - CreateNamespace=true

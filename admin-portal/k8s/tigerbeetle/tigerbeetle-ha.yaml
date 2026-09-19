@@ -1,0 +1,156 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tigerbeetle-config
+  namespace: social-protection
+data:
+  cluster-id: "0"
+  replica-count: "3"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tigerbeetle-headless
+  namespace: social-protection
+  labels:
+    app: tigerbeetle
+spec:
+  ports:
+  - port: 3000
+    name: client
+  - port: 3001
+    name: replication
+  clusterIP: None
+  selector:
+    app: tigerbeetle
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tigerbeetle
+  namespace: social-protection
+  labels:
+    app: tigerbeetle
+spec:
+  ports:
+  - port: 3000
+    name: client
+  selector:
+    app: tigerbeetle
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tigerbeetle
+  namespace: social-protection
+spec:
+  serviceName: tigerbeetle-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: tigerbeetle
+  template:
+    metadata:
+      labels:
+        app: tigerbeetle
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - tigerbeetle
+            topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - tigerbeetle
+              topologyKey: topology.kubernetes.io/zone
+      terminationGracePeriodSeconds: 300
+      initContainers:
+      - name: init-tigerbeetle
+        image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+        command:
+        - sh
+        - -c
+        - |
+          if [ ! -f /data/0_0.tigerbeetle ]; then
+            REPLICA_ID=$(echo $HOSTNAME | grep -o '[0-9]*$')
+            ADDRESSES="tigerbeetle-0.tigerbeetle-headless:3001,tigerbeetle-1.tigerbeetle-headless:3001,tigerbeetle-2.tigerbeetle-headless:3001"
+            ./tigerbeetle format --cluster=0 --replica=$REPLICA_ID --replica-count=3 /data/0_0.tigerbeetle
+          fi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        securityContext:
+          runAsUser: 0
+      containers:
+      - name: tigerbeetle
+        image: ghcr.io/tigerbeetle/tigerbeetle:0.15.3
+        command:
+        - sh
+        - -c
+        - |
+          REPLICA_ID=$(echo $HOSTNAME | grep -o '[0-9]*$')
+          ADDRESSES="tigerbeetle-0.tigerbeetle-headless:3001,tigerbeetle-1.tigerbeetle-headless:3001,tigerbeetle-2.tigerbeetle-headless:3001"
+          exec ./tigerbeetle start --addresses=$ADDRESSES /data/0_0.tigerbeetle
+        ports:
+        - containerPort: 3000
+          name: client
+        - containerPort: 3001
+          name: replication
+        resources:
+          requests:
+            cpu: 1
+            memory: 2Gi
+          limits:
+            cpu: 4
+            memory: 8Gi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        readinessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 6
+        livenessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 6
+        securityContext:
+          runAsUser: 0
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tigerbeetle-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: tigerbeetle

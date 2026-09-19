@@ -1,0 +1,288 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: social-protection
+data:
+  redis.conf: |
+    # Redis Sentinel HA Configuration
+    bind 0.0.0.0
+    port 6379
+    
+    # Persistence
+    appendonly yes
+    appendfsync everysec
+    save 900 1
+    save 300 10
+    save 60 10000
+    
+    # Memory management
+    maxmemory 2gb
+    maxmemory-policy allkeys-lru
+    
+    # Replication
+    replica-read-only yes
+    repl-diskless-sync yes
+    repl-diskless-sync-delay 5
+    
+    # Security
+    requirepass ${REDIS_PASSWORD}
+    masterauth ${REDIS_PASSWORD}
+    
+    # Performance
+    tcp-keepalive 300
+    timeout 0
+    tcp-backlog 511
+    
+  sentinel.conf: |
+    port 26379
+    sentinel monitor mymaster redis-0.redis-headless 6379 2
+    sentinel auth-pass mymaster ${REDIS_PASSWORD}
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 60000
+    sentinel parallel-syncs mymaster 1
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: social-protection
+type: Opaque
+stringData:
+  redis-password: "redis-ha-password-change-me"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+  namespace: social-protection
+  labels:
+    app: redis
+spec:
+  ports:
+  - port: 6379
+    name: redis
+  - port: 26379
+    name: sentinel
+  clusterIP: None
+  selector:
+    app: redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: social-protection
+  labels:
+    app: redis
+spec:
+  ports:
+  - port: 6379
+    name: redis
+  selector:
+    app: redis
+    role: master
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: social-protection
+  labels:
+    app: redis-sentinel
+spec:
+  ports:
+  - port: 26379
+    name: sentinel
+  selector:
+    app: redis-sentinel
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: social-protection
+spec:
+  serviceName: redis-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - redis
+            topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 30
+      initContainers:
+      - name: init-redis
+        image: redis:7.2-alpine
+        command:
+        - sh
+        - -c
+        - |
+          cp /mnt/config/redis.conf /data/redis.conf
+          if [ "$(hostname)" = "redis-0" ]; then
+            echo "This is master"
+          else
+            echo "slaveof redis-0.redis-headless 6379" >> /data/redis.conf
+          fi
+        volumeMounts:
+        - name: config
+          mountPath: /mnt/config
+        - name: data
+          mountPath: /data
+      containers:
+      - name: redis
+        image: redis:7.2-alpine
+        command: ["redis-server", "/data/redis.conf"]
+        ports:
+        - containerPort: 6379
+          name: redis
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1
+            memory: 2Gi
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: config
+          mountPath: /mnt/config
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: redis-config
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: standard
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-sentinel
+  namespace: social-protection
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-sentinel
+  template:
+    metadata:
+      labels:
+        app: redis-sentinel
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - redis-sentinel
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: sentinel
+        image: redis:7.2-alpine
+        command:
+        - sh
+        - -c
+        - |
+          cp /mnt/config/sentinel.conf /data/sentinel.conf
+          redis-sentinel /data/sentinel.conf
+        ports:
+        - containerPort: 26379
+          name: sentinel
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        - name: config
+          mountPath: /mnt/config
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: config
+        configMap:
+          name: redis-config
+      - name: data
+        emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: redis
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-sentinel-pdb
+  namespace: social-protection
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: redis-sentinel

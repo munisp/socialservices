@@ -1,0 +1,403 @@
+mccCode,description,category
+0742,Veterinary Services,Services
+0763,Agricultural Cooperatives,Agriculture
+0780,Horticultural Services,Agriculture
+1520,General Contractors - Residential and Commercial,Construction
+1711,Heating Plumbing and Air Conditioning Contractors,Construction
+1731,Electrical Contractors,Construction
+1740,Masonry Stonework Tile Setting Plastering and Insulation Contractors,Construction
+1750,Carpentry Contractors,Construction
+1761,Roofing Siding and Sheet Metal Work Contractors,Construction
+1771,Concrete Work Contractors,Construction
+1799,Special Trade Contractors - Not Elsewhere Classified,Construction
+2741,Miscellaneous Publishing and Printing,Publishing
+2791,Typesetting Plate Making and Related Services,Publishing
+2842,Specialty Cleaning Polishing and Sanitation Preparations,Manufacturing
+3000,United Airlines,Airlines
+3001,American Airlines,Airlines
+3002,Pan American,Airlines
+3003,Eurofly Airlines,Airlines
+3004,Dragon Airlines,Airlines
+3005,British Airways,Airlines
+3006,Japan Airlines,Airlines
+3007,Air France,Airlines
+3008,Lufthansa,Airlines
+3009,Air Canada,Airlines
+3010,KLM Royal Dutch Airlines,Airlines
+3011,Aeroflot,Airlines
+3012,Qantas Airways,Airlines
+3013,Alitalia,Airlines
+3014,Saudi Arabian Airlines,Airlines
+3015,Swiss International Airlines,Airlines
+3016,Scandinavian Airlines,Airlines
+3017,South African Airways,Airlines
+3018,Varig Airlines,Airlines
+3019,Air India,Airlines
+3020,Air Algerie,Airlines
+3021,Philippine Airlines,Airlines
+3022,Mexicana,Airlines
+3023,Pakistan International Airlines,Airlines
+3024,Air New Zealand,Airlines
+3025,Emirates Airlines,Airlines
+3026,Air Malta,Airlines
+3027,UTA/Interair,Airlines
+3028,Air Mauritius,Airlines
+3029,Tunis Air,Airlines
+3030,Royal Air Maroc,Airlines
+3031,Asiana Airlines,Airlines
+3032,Cathay Pacific Airways,Airlines
+3033,Malaysia Airlines,Airlines
+3034,Thai Airways International,Airlines
+3035,China Airlines,Airlines
+3036,Garuda Indonesia,Airlines
+3037,Vietnam Airlines,Airlines
+3038,Korean Air,Airlines
+3039,Delta Air Lines,Airlines
+3040,Northwest Airlines,Airlines
+3041,Continental Airlines,Airlines
+3042,Southwest Airlines,Airlines
+3043,US Airways,Airlines
+3044,JetBlue Airways,Airlines
+3045,Alaska Airlines,Airlines
+3046,Virgin Atlantic Airways,Airlines
+3047,Singapore Airlines,Airlines
+3048,Air China,Airlines
+3049,China Eastern Airlines,Airlines
+3050,China Southern Airlines,Airlines
+3051,Turkish Airlines,Airlines
+3052,Qatar Airways,Airlines
+3053,Etihad Airways,Airlines
+3054,TAM Airlines,Airlines
+3055,GOL Airlines,Airlines
+3056,Copa Airlines,Airlines
+3057,Avianca,Airlines
+3058,LAN Airlines,Airlines
+3059,AeroMexico,Airlines
+3060,Air Berlin,Airlines
+3061,Iberia Airlines,Airlines
+3062,TAP Portugal,Airlines
+3063,Finnair,Airlines
+3064,Austrian Airlines,Airlines
+3065,LOT Polish Airlines,Airlines
+3066,Czech Airlines,Airlines
+3067,Aer Lingus,Airlines
+3068,Brussels Airlines,Airlines
+3069,SAS Scandinavian Airlines,Airlines
+3070,Icelandair,Airlines
+3071,Air Malta,Airlines
+3072,Cyprus Airways,Airlines
+3073,EgyptAir,Airlines
+3074,Ethiopian Airlines,Airlines
+3075,Kenya Airways,Airlines
+3076,Royal Jordanian,Airlines
+3077,Middle East Airlines,Airlines
+3078,Gulf Air,Airlines
+3079,Oman Air,Airlines
+3080,Kuwait Airways,Airlines
+3081,Saudia,Airlines
+3082,Air India Express,Airlines
+3083,IndiGo,Airlines
+3084,SpiceJet,Airlines
+3085,AirAsia,Airlines
+3086,Cebu Pacific,Airlines
+3087,Lion Air,Airlines
+3088,Jetstar Airways,Airlines
+3089,Virgin Australia,Airlines
+3090,Air New Zealand,Airlines
+3091,Fiji Airways,Airlines
+3092,Air Tahiti Nui,Airlines
+3093,Hawaiian Airlines,Airlines
+3094,WestJet,Airlines
+3095,Air Transat,Airlines
+3096,Porter Airlines,Airlines
+3097,Frontier Airlines,Airlines
+3098,Spirit Airlines,Airlines
+3099,Allegiant Air,Airlines
+3100,Sun Country Airlines,Airlines
+4011,Railroads,Transportation
+4111,Local and Suburban Commuter Passenger Transportation,Transportation
+4112,Passenger Railways,Transportation
+4119,Ambulance Services,Healthcare
+4121,Taxicabs and Limousines,Transportation
+4131,Bus Lines,Transportation
+4214,Motor Freight Carriers and Trucking,Transportation
+4215,Courier Services,Transportation
+4225,Public Warehousing and Storage,Storage
+4411,Steamship and Cruise Lines,Transportation
+4457,Boat Rentals and Leases,Recreation
+4468,Marinas Service and Supplies,Recreation
+4511,Airlines and Air Carriers,Airlines
+4582,Airports Flying Fields and Airport Terminals,Transportation
+4722,Travel Agencies and Tour Operators,Travel
+4723,Package Tour Operators,Travel
+4784,Bridge and Road Fees Tolls,Transportation
+4789,Transportation Services - Not Elsewhere Classified,Transportation
+4812,Telecommunication Equipment and Telephone Sales,Telecommunications
+4814,Telecommunication Services,Telecommunications
+4815,Monthly Summary Telephone Charges,Telecommunications
+4816,Computer Network Services,Technology
+4821,Telegraph Services,Telecommunications
+4829,Wires Money Orders,Financial Services
+4899,Cable Satellite and Other Pay Television and Radio Services,Entertainment
+4900,Utilities - Electric Gas Water Sanitary,Utilities
+5013,Motor Vehicle Supplies and New Parts,Automotive
+5021,Office and Commercial Furniture,Retail
+5039,Construction Materials - Not Elsewhere Classified,Construction
+5044,Photographic Photocopy Microfilm Equipment and Supplies,Retail
+5045,Computers Peripherals and Software,Technology
+5046,Commercial Equipment - Not Elsewhere Classified,Retail
+5047,Medical Dental Ophthalmic and Hospital Equipment and Supplies,Healthcare
+5051,Metal Service Centers,Retail
+5065,Electrical Parts and Equipment,Retail
+5072,Hardware Equipment and Supplies,Retail
+5074,Plumbing and Heating Equipment and Supplies,Retail
+5085,Industrial Supplies - Not Elsewhere Classified,Retail
+5094,Precious Stones and Metals Watches and Jewelry,Retail
+5099,Durable Goods - Not Elsewhere Classified,Retail
+5111,Stationery Office Supplies Printing and Writing Paper,Retail
+5122,Drugs Drug Proprietaries and Druggist Sundries,Healthcare
+5131,Piece Goods Notions and Other Dry Goods,Retail
+5137,Uniforms Commercial Clothing,Retail
+5139,Commercial Footwear,Retail
+5169,Chemicals and Allied Products - Not Elsewhere Classified,Retail
+5172,Petroleum and Petroleum Products,Automotive
+5192,Books Periodicals and Newspapers,Retail
+5193,Florists Supplies Nursery Stock and Flowers,Retail
+5198,Paints Varnishes and Supplies,Retail
+5199,Nondurable Goods - Not Elsewhere Classified,Retail
+5200,Home Supply Warehouse Stores,Retail
+5211,Lumber and Building Materials Stores,Retail
+5231,Glass Paint and Wallpaper Stores,Retail
+5251,Hardware Stores,Retail
+5261,Nurseries and Lawn and Garden Supply Stores,Retail
+5271,Mobile Home Dealers,Retail
+5300,Wholesale Clubs,Retail
+5309,Duty Free Stores,Retail
+5310,Discount Stores,Retail
+5311,Department Stores,Retail
+5331,Variety Stores,Retail
+5399,Miscellaneous General Merchandise,Retail
+5411,Grocery Stores Supermarkets,Food & Beverage
+5422,Freezer and Locker Meat Provisioners,Food & Beverage
+5441,Candy Nut and Confectionery Stores,Food & Beverage
+5451,Dairy Products Stores,Food & Beverage
+5462,Bakeries,Food & Beverage
+5499,Miscellaneous Food Stores - Convenience Stores and Specialty Markets,Food & Beverage
+5511,Car and Truck Dealers - New and Used Sales Service Repairs Parts and Leasing,Automotive
+5521,Car and Truck Dealers - Used Only Sales Service Repairs Parts and Leasing,Automotive
+5531,Auto and Home Supply Stores,Automotive
+5532,Automotive Tire Stores,Automotive
+5533,Automotive Parts and Accessories Stores,Automotive
+5541,Service Stations,Automotive
+5542,Automated Fuel Dispensers,Automotive
+5551,Boat Dealers,Recreation
+5561,Camper Recreational and Utility Trailer Dealers,Recreation
+5571,Motorcycle Shops and Dealers,Automotive
+5592,Motor Homes Dealers,Automotive
+5598,Snowmobile Dealers,Recreation
+5599,Miscellaneous Auto Dealers - Not Elsewhere Classified,Automotive
+5611,Men's and Boy's Clothing and Accessories Stores,Retail
+5621,Women's Ready-to-Wear Stores,Retail
+5631,Women's Accessory and Specialty Shops,Retail
+5641,Children's and Infant's Wear Stores,Retail
+5651,Family Clothing Stores,Retail
+5655,Sports and Riding Apparel Stores,Retail
+5661,Shoe Stores,Retail
+5681,Furriers and Fur Shops,Retail
+5691,Men's and Women's Clothing Stores,Retail
+5697,Tailors Seamstresses Mending and Alterations,Services
+5698,Wig and Toupee Stores,Retail
+5699,Miscellaneous Apparel and Accessory Shops,Retail
+5712,Furniture Home Furnishings and Equipment Stores Except Appliances,Retail
+5713,Floor Covering Stores,Retail
+5714,Drapery Window Covering and Upholstery Stores,Retail
+5718,Fireplace Fireplace Screens and Accessories Stores,Retail
+5719,Miscellaneous Home Furnishing Specialty Stores,Retail
+5722,Household Appliance Stores,Retail
+5732,Electronics Stores,Retail
+5733,Music Stores - Musical Instruments Pianos and Sheet Music,Retail
+5734,Computer Software Stores,Technology
+5735,Record Stores,Retail
+5811,Caterers,Food & Beverage
+5812,Eating Places and Restaurants,Food & Beverage
+5813,Drinking Places - Bars Taverns Nightclubs Cocktail Lounges and Discotheques,Food & Beverage
+5814,Fast Food Restaurants,Food & Beverage
+5815,Digital Goods Media - Books Movies Music,Digital Goods
+5816,Digital Goods - Games,Digital Goods
+5817,Digital Goods - Applications,Digital Goods
+5818,Digital Goods - Large Digital Goods Merchant,Digital Goods
+5912,Drug Stores and Pharmacies,Healthcare
+5921,Package Stores - Beer Wine and Liquor,Food & Beverage
+5931,Used Merchandise and Secondhand Stores,Retail
+5932,Antique Shops,Retail
+5933,Pawn Shops,Financial Services
+5935,Wrecking and Salvage Yards,Automotive
+5937,Antique Reproductions,Retail
+5940,Bicycle Shops,Retail
+5941,Sporting Goods Stores,Retail
+5942,Book Stores,Retail
+5943,Stationery Stores Office and School Supply Stores,Retail
+5944,Jewelry Stores Watches Clocks and Silverware Stores,Retail
+5945,Hobby Toy and Game Shops,Retail
+5946,Camera and Photographic Supply Stores,Retail
+5947,Gift Card Novelty and Souvenir Shops,Retail
+5948,Luggage and Leather Goods Stores,Retail
+5949,Sewing Needlework Fabric and Piece Goods Stores,Retail
+5950,Glassware Crystal Stores,Retail
+5960,Direct Marketing - Insurance Services,Financial Services
+5962,Direct Marketing - Travel Related Arrangements Services,Travel
+5963,Door-to-Door Sales,Retail
+5964,Direct Marketing - Catalog Merchant,Retail
+5965,Direct Marketing - Combination Catalog and Retail Merchant,Retail
+5966,Direct Marketing - Outbound Telemarketing Merchant,Retail
+5967,Direct Marketing - Inbound Teleservices Merchant,Retail
+5968,Direct Marketing - Continuity Subscription Merchant,Retail
+5969,Direct Marketing - Not Elsewhere Classified,Retail
+5970,Artist's Supply and Craft Shops,Retail
+5971,Art Dealers and Galleries,Retail
+5972,Stamp and Coin Stores,Retail
+5973,Religious Goods Stores,Retail
+5975,Hearing Aids - Sales Service and Supply Stores,Healthcare
+5976,Orthopedic Goods - Prosthetic Devices,Healthcare
+5977,Cosmetic Stores,Retail
+5978,Typewriter Stores,Retail
+5983,Fuel Dealers - Fuel Oil Wood Coal and Liquefied Petroleum,Utilities
+5992,Florists,Retail
+5993,Cigar Stores and Stands,Retail
+5994,News Dealers and Newsstands,Retail
+5995,Pet Shops Pet Food and Supplies,Retail
+5996,Swimming Pools - Sales Service and Supplies,Retail
+5997,Electric Razor Stores,Retail
+5998,Tent and Awning Shops,Retail
+5999,Miscellaneous and Specialty Retail Stores,Retail
+6010,Financial Institutions - Manual Cash Disbursements,Financial Services
+6011,Financial Institutions - Automated Cash Disbursements,Financial Services
+6012,Financial Institutions - Merchandise and Services,Financial Services
+6051,Non-Financial Institutions - Foreign Currency Money Orders,Financial Services
+6211,Security Brokers Dealers,Financial Services
+6300,Insurance Sales Underwriting and Premiums,Financial Services
+6381,Insurance Premiums,Financial Services
+6399,Insurance - Not Elsewhere Classified,Financial Services
+6513,Real Estate Agents and Managers - Rentals,Real Estate
+6532,Payment Transaction - Customer Financial Institution,Financial Services
+6533,Payment Transaction - Merchant Financial Institution,Financial Services
+6536,MoneySend Intracountry,Financial Services
+6537,MoneySend Intercountry,Financial Services
+6538,MoneySend Funding,Financial Services
+6540,POI Funding Transactions,Financial Services
+7011,Hotels Motels and Resorts,Lodging
+7012,Timeshares,Lodging
+7032,Sporting and Recreational Camps,Recreation
+7033,Trailer Parks and Campgrounds,Lodging
+7210,Laundry Cleaning and Garment Services,Services
+7211,Laundries - Family and Commercial,Services
+7216,Dry Cleaners,Services
+7217,Carpet and Upholstery Cleaning,Services
+7221,Photographic Studios,Services
+7230,Beauty and Barber Shops,Services
+7251,Shoe Repair Shops Hat Cleaning Shops and Shoe Shine Parlors,Services
+7261,Funeral Services and Crematories,Services
+7273,Dating and Escort Services,Services
+7276,Tax Preparation Services,Services
+7277,Counseling Services - Debt Marriage Personal,Services
+7278,Buying and Shopping Services and Clubs,Services
+7296,Clothing Rental,Services
+7297,Massage Parlors,Services
+7298,Health and Beauty Spas,Services
+7299,Miscellaneous Personal Services - Not Elsewhere Classified,Services
+7311,Advertising Services,Services
+7321,Consumer Credit Reporting Agencies,Financial Services
+7332,Blueprinting and Photocopying Services,Services
+7333,Commercial Photography Art and Graphics,Services
+7338,Quick Copy Reproduction and Blueprinting Services,Services
+7339,Stenographic and Secretarial Support Services,Services
+7342,Exterminating and Disinfecting Services,Services
+7349,Cleaning and Maintenance Janitorial Services,Services
+7361,Employment Agencies and Temporary Help Services,Services
+7372,Computer Programming Data Processing and Integrated Systems Design Services,Technology
+7375,Information Retrieval Services,Technology
+7379,Computer Maintenance and Repair Services - Not Elsewhere Classified,Technology
+7392,Management Consulting and Public Relations Services,Services
+7393,Detective Agencies Protective Agencies and Security Services,Services
+7394,Equipment Rental and Leasing Services,Services
+7395,Photofinishing Laboratories and Photo Developing,Services
+7399,Business Services - Not Elsewhere Classified,Services
+7511,Truck Stop,Automotive
+7512,Car Rental Agencies,Transportation
+7513,Truck and Utility Trailer Rentals,Transportation
+7519,Recreational Vehicle Rentals,Recreation
+7523,Parking Lots and Garages,Transportation
+7531,Automotive Body Repair Shops,Automotive
+7534,Tire Retreading and Repair Shops,Automotive
+7535,Automotive Paint Shops,Automotive
+7538,Automotive Service Shops,Automotive
+7542,Car Washes,Automotive
+7549,Towing Services,Automotive
+7622,Electronics Repair Shops,Services
+7623,Air Conditioning and Refrigeration Repair Shops,Services
+7629,Electrical and Small Appliance Repair Shops,Services
+7631,Watch Clock and Jewelry Repair,Services
+7641,Furniture Reupholstery Repair and Refinishing,Services
+7692,Welding Repair,Services
+7699,Miscellaneous Repair Shops and Related Services,Services
+7800,Government Owned Lotteries,Government
+7801,Government Licensed On-Line Casinos,Gambling
+7802,Government Licensed Horse Dog Racing,Gambling
+7829,Motion Pictures and Video Tape Production and Distribution,Entertainment
+7832,Motion Picture Theaters,Entertainment
+7841,Video Tape Rental Stores,Entertainment
+7911,Dance Halls Studios and Schools,Recreation
+7922,Theatrical Producers and Ticket Agencies,Entertainment
+7929,Bands Orchestras and Miscellaneous Entertainers,Entertainment
+7932,Billiard and Pool Establishments,Recreation
+7933,Bowling Alleys,Recreation
+7941,Commercial Sports Professional Sports Clubs Athletic Fields and Sports Promoters,Recreation
+7991,Tourist Attractions and Exhibits,Recreation
+7992,Golf Courses - Public,Recreation
+7993,Video Amusement Game Supplies,Recreation
+7994,Video Game Arcades and Establishments,Recreation
+7995,Betting - Including Lottery Tickets Casino Gaming Chips Off-Track Betting and Wagers,Gambling
+7996,Amusement Parks Circuses Carnivals and Fortune Tellers,Recreation
+7997,Membership Clubs - Sports Recreation Athletic Country Clubs and Private Golf Courses,Recreation
+7998,Aquariums Seaquariums Dolphinariums,Recreation
+7999,Recreation Services - Not Elsewhere Classified,Recreation
+8011,Doctors and Physicians - Not Elsewhere Classified,Healthcare
+8021,Dentists and Orthodontists,Healthcare
+8031,Osteopaths,Healthcare
+8041,Chiropractors,Healthcare
+8042,Optometrists and Ophthalmologists,Healthcare
+8043,Opticians Optical Goods and Eyeglasses,Healthcare
+8049,Podiatrists and Chiropodists,Healthcare
+8050,Nursing and Personal Care Facilities,Healthcare
+8062,Hospitals,Healthcare
+8071,Medical and Dental Laboratories,Healthcare
+8099,Medical Services and Health Practitioners - Not Elsewhere Classified,Healthcare
+8111,Legal Services and Attorneys,Services
+8211,Elementary and Secondary Schools,Education
+8220,Colleges Junior Colleges Universities and Professional Schools,Education
+8241,Correspondence Schools,Education
+8244,Business and Secretarial Schools,Education
+8249,Vocational Schools and Trade Schools,Education
+8299,Schools and Educational Services - Not Elsewhere Classified,Education
+8351,Child Care Services,Services
+8398,Charitable and Social Service Organizations,Non-Profit
+8641,Civic Social and Fraternal Associations,Non-Profit
+8651,Political Organizations,Non-Profit
+8661,Religious Organizations,Non-Profit
+8675,Automobile Associations,Non-Profit
+8699,Membership Organizations - Not Elsewhere Classified,Non-Profit
+8734,Testing Laboratories,Services
+8911,Architectural Engineering and Surveying Services,Services
+8931,Accounting Auditing and Bookkeeping Services,Services
+8999,Professional Services - Not Elsewhere Classified,Services
+9211,Court Costs Including Alimony and Child Support,Government
+9222,Fines,Government
+9223,Bail and Bond Payments,Government
+9311,Tax Payments,Government
+9399,Government Services - Not Elsewhere Classified,Government
+9402,Postal Services - Government Only,Government
+9405,Intra-Government Transactions,Government
+9700,Automated Referral Service,Services
+9701,Visa Credential Service,Financial Services
+9702,GCAS Emergency Services,Services
+9950,Intra-Company Purchases,Business

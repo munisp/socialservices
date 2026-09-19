@@ -1,0 +1,21 @@
+{
+  "query": "SELECT \n  (SELECT COUNT(*) FROM benefit_programs) as programs,\n  (SELECT COUNT(*) FROM mcc_rules) as mcc_rules,\n  (SELECT COUNT(*) FROM mcc_database) as mcc_codes,\n  (SELECT COUNT(*) FROM disbursement_schedules) as disbursements,\n  (SELECT COUNT(*) FROM feature_flags) as feature_flags,\n  (SELECT COUNT(*) FROM approval_requests) as approval_requests,\n  (SELECT COUNT(*) FROM program_templates) as program_templates,\n  (SELECT COUNT(*) FROM scheduled_reports) as scheduled_reports,\n  (SELECT COUNT(*) FROM notification_preferences) as notification_prefs;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user NzNswwN3cq6gauf.177a8c3114f9 --database oUm8mUi4XRovahjdybys5o --execute SELECT \n  (SELECT COUNT(*) FROM benefit_programs) as programs,\n  (SELECT COUNT(*) FROM mcc_rules) as mcc_rules,\n  (SELECT COUNT(*) FROM mcc_database) as mcc_codes,\n  (SELECT COUNT(*) FROM disbursement_schedules) as disbursements,\n  (SELECT COUNT(*) FROM feature_flags) as feature_flags,\n  (SELECT COUNT(*) FROM approval_requests) as approval_requests,\n  (SELECT COUNT(*) FROM program_templates) as program_templates,\n  (SELECT COUNT(*) FROM scheduled_reports) as scheduled_reports,\n  (SELECT COUNT(*) FROM notification_preferences) as notification_prefs;",
+  "rows": [
+    {
+      "programs": "3",
+      "mcc_rules": "34",
+      "mcc_codes": "402",
+      "disbursements": "16",
+      "feature_flags": "10",
+      "approval_requests": "3",
+      "program_templates": "5",
+      "scheduled_reports": "5",
+      "notification_prefs": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "programs\tmcc_rules\tmcc_codes\tdisbursements\tfeature_flags\tapproval_requests\tprogram_templates\tscheduled_reports\tnotification_prefs\n3\t34\t402\t16\t10\t3\t5\t5\t1\n",
+  "stderr": "",
+  "execution_time_ms": 69
+}

@@ -1,0 +1,15 @@
+{
+  "query": "SELECT \n  (SELECT COUNT(*) FROM benefit_programs) as programs,\n  (SELECT COUNT(*) FROM mcc_rules) as mcc_rules,\n  (SELECT COUNT(*) FROM mcc_database) as mcc_codes;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user NzNswwN3cq6gauf.177a8c3114f9 --database oUm8mUi4XRovahjdybys5o --execute SELECT \n  (SELECT COUNT(*) FROM benefit_programs) as programs,\n  (SELECT COUNT(*) FROM mcc_rules) as mcc_rules,\n  (SELECT COUNT(*) FROM mcc_database) as mcc_codes;",
+  "rows": [
+    {
+      "programs": "3",
+      "mcc_rules": "34",
+      "mcc_codes": "402"
+    }
+  ],
+  "messages": [],
+  "stdout": "programs\tmcc_rules\tmcc_codes\n3\t34\t402\n",
+  "stderr": "",
+  "execution_time_ms": 457
+}

@@ -1,0 +1,298 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: social-protection-slos
+  namespace: social-protection
+  labels:
+    app: social-protection
+    prometheus: main
+spec:
+  groups:
+    # ========== SLO: API Availability ==========
+    - name: api-availability-slo
+      interval: 30s
+      rules:
+        # Error budget burn rate (multi-window)
+        - record: slo:api_availability:error_budget_remaining
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{job="admin-portal", code=~"5.."}[30d]))
+              /
+              sum(rate(http_requests_total{job="admin-portal"}[30d]))
+            ) / 0.001
+
+        # 1h burn rate
+        - record: slo:api_availability:burn_rate_1h
+          expr: |
+            sum(rate(http_requests_total{job="admin-portal", code=~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total{job="admin-portal"}[1h]))
+            / 0.001
+
+        # 6h burn rate
+        - record: slo:api_availability:burn_rate_6h
+          expr: |
+            sum(rate(http_requests_total{job="admin-portal", code=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total{job="admin-portal"}[6h]))
+            / 0.001
+
+        # Alert: Fast burn (page)
+        - alert: APIAvailabilitySLOFastBurn
+          expr: |
+            slo:api_availability:burn_rate_1h > 14.4
+            and
+            slo:api_availability:burn_rate_6h > 6
+          for: 2m
+          labels:
+            severity: critical
+            slo: api-availability
+          annotations:
+            summary: "API availability SLO fast burn detected"
+            description: "Error budget is being consumed at {{ $value }}x the sustainable rate"
+            runbook_url: "https://docs.example.com/runbooks/api-availability"
+
+        # Alert: Slow burn (ticket)
+        - alert: APIAvailabilitySLOSlowBurn
+          expr: |
+            slo:api_availability:burn_rate_6h > 3
+          for: 1h
+          labels:
+            severity: warning
+            slo: api-availability
+          annotations:
+            summary: "API availability SLO slow burn detected"
+            description: "Error budget is being consumed at {{ $value }}x the sustainable rate"
+
+    # ========== SLO: API Latency ==========
+    - name: api-latency-slo
+      interval: 30s
+      rules:
+        # P99 latency
+        - record: slo:api_latency:p99
+          expr: |
+            histogram_quantile(0.99, 
+              sum(rate(http_request_duration_seconds_bucket{job="admin-portal"}[5m])) by (le)
+            )
+
+        # Latency SLO compliance (target: 99% of requests < 500ms)
+        - record: slo:api_latency:compliance
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{job="admin-portal", le="0.5"}[5m]))
+            /
+            sum(rate(http_request_duration_seconds_count{job="admin-portal"}[5m]))
+
+        # Alert: Latency SLO breach
+        - alert: APILatencySLOBreach
+          expr: slo:api_latency:compliance < 0.99
+          for: 5m
+          labels:
+            severity: warning
+            slo: api-latency
+          annotations:
+            summary: "API latency SLO breach"
+            description: "Only {{ $value | humanizePercentage }} of requests are meeting the 500ms latency target"
+
+    # ========== SLO: Disbursement Success Rate ==========
+    - name: disbursement-slo
+      interval: 30s
+      rules:
+        # Disbursement success rate
+        - record: slo:disbursement:success_rate
+          expr: |
+            sum(rate(disbursement_total{status="success"}[1h]))
+            /
+            sum(rate(disbursement_total[1h]))
+
+        # Alert: Disbursement success rate below target
+        - alert: DisbursementSuccessRateLow
+          expr: slo:disbursement:success_rate < 0.995
+          for: 10m
+          labels:
+            severity: critical
+            slo: disbursement-success
+          annotations:
+            summary: "Disbursement success rate below SLO"
+            description: "Disbursement success rate is {{ $value | humanizePercentage }}, target is 99.5%"
+
+    # ========== SLO: Workflow Completion ==========
+    - name: workflow-slo
+      interval: 30s
+      rules:
+        # Workflow completion rate
+        - record: slo:workflow:completion_rate
+          expr: |
+            sum(rate(temporal_workflow_completed_total[1h]))
+            /
+            (sum(rate(temporal_workflow_completed_total[1h])) + sum(rate(temporal_workflow_failed_total[1h])))
+
+        # Alert: Workflow failure rate high
+        - alert: WorkflowFailureRateHigh
+          expr: slo:workflow:completion_rate < 0.99
+          for: 15m
+          labels:
+            severity: warning
+            slo: workflow-completion
+          annotations:
+            summary: "Workflow completion rate below SLO"
+            description: "Workflow completion rate is {{ $value | humanizePercentage }}"
+
+    # ========== Infrastructure Alerts ==========
+    - name: infrastructure-alerts
+      interval: 30s
+      rules:
+        # Database connection pool exhaustion
+        - alert: DatabaseConnectionPoolExhausted
+          expr: |
+            mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Database connection pool near exhaustion"
+            description: "{{ $value | humanizePercentage }} of database connections are in use"
+
+        # Redis memory usage high
+        - alert: RedisMemoryHigh
+          expr: |
+            redis_memory_used_bytes / redis_memory_max_bytes > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Redis memory usage high"
+            description: "Redis is using {{ $value | humanizePercentage }} of available memory"
+
+        # Kafka consumer lag
+        - alert: KafkaConsumerLagHigh
+          expr: |
+            kafka_consumer_group_lag > 10000
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Kafka consumer lag high"
+            description: "Consumer group {{ $labels.consumer_group }} has lag of {{ $value }} messages"
+
+        # TigerBeetle latency
+        - alert: TigerBeetleLatencyHigh
+          expr: |
+            histogram_quantile(0.99, rate(tigerbeetle_request_duration_seconds_bucket[5m])) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "TigerBeetle latency high"
+            description: "P99 latency is {{ $value }}s"
+
+        # Pod restart rate
+        - alert: PodRestartRateHigh
+          expr: |
+            rate(kube_pod_container_status_restarts_total{namespace="social-protection"}[1h]) > 0.1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pod restart rate high"
+            description: "Pod {{ $labels.pod }} is restarting frequently"
+
+        # Certificate expiry
+        - alert: CertificateExpiringSoon
+          expr: |
+            (cert_exporter_cert_expires_in_seconds / 86400) < 30
+          for: 1h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Certificate expiring soon"
+            description: "Certificate {{ $labels.cn }} expires in {{ $value }} days"
+
+    # ========== Business Metrics Alerts ==========
+    - name: business-alerts
+      interval: 60s
+      rules:
+        # Reconciliation discrepancy
+        - alert: ReconciliationDiscrepancyHigh
+          expr: |
+            reconciliation_discrepancy_count > 10
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High reconciliation discrepancies"
+            description: "{{ $value }} unresolved reconciliation discrepancies"
+
+        # Fraud score spike
+        - alert: FraudScoreSpike
+          expr: |
+            rate(fraud_high_risk_transactions_total[1h]) > rate(fraud_high_risk_transactions_total[24h] offset 1h) * 2
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Spike in high-risk fraud scores"
+            description: "High-risk transaction rate has doubled compared to yesterday"
+
+        # Approval queue backlog
+        - alert: ApprovalQueueBacklog
+          expr: |
+            approval_pending_count > 100
+          for: 2h
+          labels:
+            severity: warning
+          annotations:
+            summary: "Approval queue backlog"
+            description: "{{ $value }} approvals pending for more than 2 hours"
+---
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: social-protection-alerts
+  namespace: social-protection
+spec:
+  route:
+    groupBy: ['alertname', 'severity', 'slo']
+    groupWait: 30s
+    groupInterval: 5m
+    repeatInterval: 4h
+    receiver: 'default-receiver'
+    routes:
+      - match:
+          severity: critical
+        receiver: 'critical-receiver'
+        continue: true
+      - match:
+          slo: api-availability
+        receiver: 'slo-receiver'
+      - match:
+          slo: disbursement-success
+        receiver: 'disbursement-receiver'
+
+  receivers:
+    - name: 'default-receiver'
+      webhookConfigs:
+        - url: 'http://alertmanager-webhook:9095/webhook'
+          sendResolved: true
+
+    - name: 'critical-receiver'
+      webhookConfigs:
+        - url: 'http://pagerduty-webhook:9096/webhook'
+          sendResolved: true
+
+    - name: 'slo-receiver'
+      webhookConfigs:
+        - url: 'http://slo-dashboard:9097/webhook'
+          sendResolved: true
+
+    - name: 'disbursement-receiver'
+      webhookConfigs:
+        - url: 'http://disbursement-alerts:9098/webhook'
+          sendResolved: true
+
+  inhibitRules:
+    - sourceMatch:
+        severity: 'critical'
+      targetMatch:
+        severity: 'warning'
+      equal: ['alertname']

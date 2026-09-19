@@ -1,0 +1,682 @@
+---
+# Backup CronJobs for Social Protection Platform
+# Automated backups for PostgreSQL, Redis, and other stateful services
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-scripts
+  namespace: social-protection
+data:
+  postgresql-backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="postgresql_backup_${TIMESTAMP}.sql.gz"
+    S3_BUCKET="${S3_BUCKET:-social-protection-backups}"
+    S3_PREFIX="${S3_PREFIX:-postgresql}"
+    RETENTION_DAYS="${RETENTION_DAYS:-30}"
+    
+    echo "[$(date)] Starting PostgreSQL backup..."
+    
+    # Create backup
+    PGPASSWORD="${POSTGRES_PASSWORD}" pg_dumpall \
+      -h "${POSTGRES_HOST}" \
+      -U "${POSTGRES_USER}" \
+      --clean \
+      --if-exists \
+      | gzip > "/tmp/${BACKUP_FILE}"
+    
+    BACKUP_SIZE=$(du -h "/tmp/${BACKUP_FILE}" | cut -f1)
+    echo "[$(date)] Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+    
+    # Upload to S3
+    aws s3 cp "/tmp/${BACKUP_FILE}" "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}" \
+      --storage-class STANDARD_IA
+    
+    echo "[$(date)] Backup uploaded to S3"
+    
+    # Cleanup old backups
+    echo "[$(date)] Cleaning up backups older than ${RETENTION_DAYS} days..."
+    CUTOFF_DATE=$(date -d "-${RETENTION_DAYS} days" +%Y%m%d)
+    
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | while read -r line; do
+      FILENAME=$(echo "$line" | awk '{print $4}')
+      if [[ "$FILENAME" =~ postgresql_backup_([0-9]{8})_ ]]; then
+        FILE_DATE="${BASH_REMATCH[1]}"
+        if [[ "$FILE_DATE" < "$CUTOFF_DATE" ]]; then
+          echo "Deleting old backup: ${FILENAME}"
+          aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${FILENAME}"
+        fi
+      fi
+    done
+    
+    # Cleanup local file
+    rm -f "/tmp/${BACKUP_FILE}"
+    
+    echo "[$(date)] PostgreSQL backup completed successfully"
+    
+  redis-backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="redis_backup_${TIMESTAMP}.rdb.gz"
+    S3_BUCKET="${S3_BUCKET:-social-protection-backups}"
+    S3_PREFIX="${S3_PREFIX:-redis}"
+    RETENTION_DAYS="${RETENTION_DAYS:-7}"
+    
+    echo "[$(date)] Starting Redis backup..."
+    
+    # Trigger BGSAVE on Redis
+    redis-cli -h "${REDIS_HOST}" -a "${REDIS_PASSWORD}" BGSAVE
+    
+    # Wait for BGSAVE to complete
+    while [ "$(redis-cli -h "${REDIS_HOST}" -a "${REDIS_PASSWORD}" LASTSAVE)" == "$(redis-cli -h "${REDIS_HOST}" -a "${REDIS_PASSWORD}" LASTSAVE)" ]; do
+      sleep 1
+    done
+    
+    # Copy RDB file
+    redis-cli -h "${REDIS_HOST}" -a "${REDIS_PASSWORD}" --rdb "/tmp/dump.rdb"
+    gzip -c "/tmp/dump.rdb" > "/tmp/${BACKUP_FILE}"
+    
+    BACKUP_SIZE=$(du -h "/tmp/${BACKUP_FILE}" | cut -f1)
+    echo "[$(date)] Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+    
+    # Upload to S3
+    aws s3 cp "/tmp/${BACKUP_FILE}" "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}" \
+      --storage-class STANDARD_IA
+    
+    echo "[$(date)] Backup uploaded to S3"
+    
+    # Cleanup old backups
+    echo "[$(date)] Cleaning up backups older than ${RETENTION_DAYS} days..."
+    CUTOFF_DATE=$(date -d "-${RETENTION_DAYS} days" +%Y%m%d)
+    
+    aws s3 ls "s3://${S3_BUCKET}/${S3_PREFIX}/" | while read -r line; do
+      FILENAME=$(echo "$line" | awk '{print $4}')
+      if [[ "$FILENAME" =~ redis_backup_([0-9]{8})_ ]]; then
+        FILE_DATE="${BASH_REMATCH[1]}"
+        if [[ "$FILE_DATE" < "$CUTOFF_DATE" ]]; then
+          echo "Deleting old backup: ${FILENAME}"
+          aws s3 rm "s3://${S3_BUCKET}/${S3_PREFIX}/${FILENAME}"
+        fi
+      fi
+    done
+    
+    # Cleanup local files
+    rm -f "/tmp/dump.rdb" "/tmp/${BACKUP_FILE}"
+    
+    echo "[$(date)] Redis backup completed successfully"
+    
+  tigerbeetle-backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="tigerbeetle_backup_${TIMESTAMP}.tar.gz"
+    S3_BUCKET="${S3_BUCKET:-social-protection-backups}"
+    S3_PREFIX="${S3_PREFIX:-tigerbeetle}"
+    RETENTION_DAYS="${RETENTION_DAYS:-90}"
+    DATA_DIR="${TIGERBEETLE_DATA_DIR:-/data}"
+    
+    echo "[$(date)] Starting TigerBeetle backup..."
+    
+    # Create snapshot (TigerBeetle supports online backups)
+    tar -czf "/tmp/${BACKUP_FILE}" -C "${DATA_DIR}" .
+    
+    BACKUP_SIZE=$(du -h "/tmp/${BACKUP_FILE}" | cut -f1)
+    echo "[$(date)] Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+    
+    # Upload to S3 with Glacier for long-term retention
+    aws s3 cp "/tmp/${BACKUP_FILE}" "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}" \
+      --storage-class GLACIER
+    
+    echo "[$(date)] Backup uploaded to S3 (Glacier)"
+    
+    # Cleanup local file
+    rm -f "/tmp/${BACKUP_FILE}"
+    
+    echo "[$(date)] TigerBeetle backup completed successfully"
+    
+  kafka-backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    BACKUP_FILE="kafka_metadata_${TIMESTAMP}.tar.gz"
+    S3_BUCKET="${S3_BUCKET:-social-protection-backups}"
+    S3_PREFIX="${S3_PREFIX:-kafka}"
+    RETENTION_DAYS="${RETENTION_DAYS:-30}"
+    
+    echo "[$(date)] Starting Kafka metadata backup..."
+    
+    # Export topic configurations
+    mkdir -p /tmp/kafka_backup
+    
+    # Get list of topics
+    kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP_SERVERS}" --list > /tmp/kafka_backup/topics.txt
+    
+    # Export topic configs
+    while read -r topic; do
+      kafka-configs.sh --bootstrap-server "${KAFKA_BOOTSTRAP_SERVERS}" \
+        --entity-type topics --entity-name "$topic" --describe \
+        > "/tmp/kafka_backup/topic_${topic}_config.txt" 2>/dev/null || true
+    done < /tmp/kafka_backup/topics.txt
+    
+    # Export consumer group offsets
+    kafka-consumer-groups.sh --bootstrap-server "${KAFKA_BOOTSTRAP_SERVERS}" --list \
+      > /tmp/kafka_backup/consumer_groups.txt
+    
+    while read -r group; do
+      kafka-consumer-groups.sh --bootstrap-server "${KAFKA_BOOTSTRAP_SERVERS}" \
+        --group "$group" --describe \
+        > "/tmp/kafka_backup/group_${group}_offsets.txt" 2>/dev/null || true
+    done < /tmp/kafka_backup/consumer_groups.txt
+    
+    # Create archive
+    tar -czf "/tmp/${BACKUP_FILE}" -C /tmp/kafka_backup .
+    
+    BACKUP_SIZE=$(du -h "/tmp/${BACKUP_FILE}" | cut -f1)
+    echo "[$(date)] Backup created: ${BACKUP_FILE} (${BACKUP_SIZE})"
+    
+    # Upload to S3
+    aws s3 cp "/tmp/${BACKUP_FILE}" "s3://${S3_BUCKET}/${S3_PREFIX}/${BACKUP_FILE}"
+    
+    echo "[$(date)] Backup uploaded to S3"
+    
+    # Cleanup
+    rm -rf /tmp/kafka_backup "/tmp/${BACKUP_FILE}"
+    
+    echo "[$(date)] Kafka metadata backup completed successfully"
+    
+  verify-backup.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    S3_BUCKET="${S3_BUCKET:-social-protection-backups}"
+    ALERT_WEBHOOK="${ALERT_WEBHOOK:-}"
+    
+    echo "[$(date)] Verifying backups..."
+    
+    ERRORS=""
+    
+    # Check PostgreSQL backups
+    PG_LATEST=$(aws s3 ls "s3://${S3_BUCKET}/postgresql/" | sort | tail -1 | awk '{print $4}')
+    if [ -z "$PG_LATEST" ]; then
+      ERRORS="${ERRORS}PostgreSQL: No backups found\n"
+    else
+      PG_DATE=$(echo "$PG_LATEST" | grep -oP '\d{8}')
+      PG_AGE=$(( ($(date +%s) - $(date -d "$PG_DATE" +%s)) / 86400 ))
+      if [ "$PG_AGE" -gt 1 ]; then
+        ERRORS="${ERRORS}PostgreSQL: Latest backup is ${PG_AGE} days old\n"
+      fi
+    fi
+    
+    # Check Redis backups
+    REDIS_LATEST=$(aws s3 ls "s3://${S3_BUCKET}/redis/" | sort | tail -1 | awk '{print $4}')
+    if [ -z "$REDIS_LATEST" ]; then
+      ERRORS="${ERRORS}Redis: No backups found\n"
+    else
+      REDIS_DATE=$(echo "$REDIS_LATEST" | grep -oP '\d{8}')
+      REDIS_AGE=$(( ($(date +%s) - $(date -d "$REDIS_DATE" +%s)) / 86400 ))
+      if [ "$REDIS_AGE" -gt 1 ]; then
+        ERRORS="${ERRORS}Redis: Latest backup is ${REDIS_AGE} days old\n"
+      fi
+    fi
+    
+    # Check TigerBeetle backups
+    TB_LATEST=$(aws s3 ls "s3://${S3_BUCKET}/tigerbeetle/" | sort | tail -1 | awk '{print $4}')
+    if [ -z "$TB_LATEST" ]; then
+      ERRORS="${ERRORS}TigerBeetle: No backups found\n"
+    else
+      TB_DATE=$(echo "$TB_LATEST" | grep -oP '\d{8}')
+      TB_AGE=$(( ($(date +%s) - $(date -d "$TB_DATE" +%s)) / 86400 ))
+      if [ "$TB_AGE" -gt 1 ]; then
+        ERRORS="${ERRORS}TigerBeetle: Latest backup is ${TB_AGE} days old\n"
+      fi
+    fi
+    
+    if [ -n "$ERRORS" ]; then
+      echo "BACKUP VERIFICATION FAILED:"
+      echo -e "$ERRORS"
+      
+      if [ -n "$ALERT_WEBHOOK" ]; then
+        curl -X POST "$ALERT_WEBHOOK" \
+          -H "Content-Type: application/json" \
+          -d "{\"text\": \"Backup Verification Failed:\\n${ERRORS}\"}"
+      fi
+      
+      exit 1
+    fi
+    
+    echo "[$(date)] All backups verified successfully"
+---
+# PostgreSQL Backup CronJob - Daily at 2 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgresql-backup
+  namespace: social-protection
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            app: backup-job
+            backup-type: postgresql
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: backup
+              image: postgres:15-alpine
+              command: ["/bin/bash", "/scripts/postgresql-backup.sh"]
+              env:
+                - name: POSTGRES_HOST
+                  value: "postgresql.social-protection.svc.cluster.local"
+                - name: POSTGRES_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-credentials
+                      key: username
+                - name: POSTGRES_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-credentials
+                      key: password
+                - name: S3_BUCKET
+                  value: "social-protection-backups"
+                - name: S3_PREFIX
+                  value: "postgresql"
+                - name: RETENTION_DAYS
+                  value: "30"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: secret-access-key
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}
+---
+# Redis Backup CronJob - Every 6 hours
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-backup
+  namespace: social-protection
+spec:
+  schedule: "0 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: backup-job
+            backup-type: redis
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: backup
+              image: redis:7-alpine
+              command: ["/bin/sh", "-c", "apk add --no-cache aws-cli bash && /scripts/redis-backup.sh"]
+              env:
+                - name: REDIS_HOST
+                  value: "redis-master.social-protection.svc.cluster.local"
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: redis-credentials
+                      key: password
+                - name: S3_BUCKET
+                  value: "social-protection-backups"
+                - name: S3_PREFIX
+                  value: "redis"
+                - name: RETENTION_DAYS
+                  value: "7"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: secret-access-key
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}
+---
+# TigerBeetle Backup CronJob - Daily at 3 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tigerbeetle-backup
+  namespace: social-protection
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 7200
+      template:
+        metadata:
+          labels:
+            app: backup-job
+            backup-type: tigerbeetle
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: backup
+              image: amazon/aws-cli:latest
+              command: ["/bin/bash", "/scripts/tigerbeetle-backup.sh"]
+              env:
+                - name: TIGERBEETLE_DATA_DIR
+                  value: "/data"
+                - name: S3_BUCKET
+                  value: "social-protection-backups"
+                - name: S3_PREFIX
+                  value: "tigerbeetle"
+                - name: RETENTION_DAYS
+                  value: "90"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: secret-access-key
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tigerbeetle-data
+                  mountPath: /data
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 500m
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tigerbeetle-data
+              persistentVolumeClaim:
+                claimName: tigerbeetle-data-tigerbeetle-0
+            - name: tmp
+              emptyDir: {}
+---
+# Kafka Metadata Backup CronJob - Daily at 4 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kafka-metadata-backup
+  namespace: social-protection
+spec:
+  schedule: "0 4 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: backup-job
+            backup-type: kafka
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: backup
+              image: confluentinc/cp-kafka:7.5.0
+              command: ["/bin/bash", "/scripts/kafka-backup.sh"]
+              env:
+                - name: KAFKA_BOOTSTRAP_SERVERS
+                  value: "kafka-0.kafka-headless.social-protection.svc.cluster.local:9092,kafka-1.kafka-headless.social-protection.svc.cluster.local:9092,kafka-2.kafka-headless.social-protection.svc.cluster.local:9092"
+                - name: S3_BUCKET
+                  value: "social-protection-backups"
+                - name: S3_PREFIX
+                  value: "kafka"
+                - name: RETENTION_DAYS
+                  value: "30"
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: secret-access-key
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: 250m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+            - name: tmp
+              emptyDir: {}
+---
+# Backup Verification CronJob - Daily at 6 AM
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-verification
+  namespace: social-protection
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 7
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 600
+      template:
+        metadata:
+          labels:
+            app: backup-job
+            backup-type: verification
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+          containers:
+            - name: verify
+              image: amazon/aws-cli:latest
+              command: ["/bin/bash", "/scripts/verify-backup.sh"]
+              env:
+                - name: S3_BUCKET
+                  value: "social-protection-backups"
+                - name: ALERT_WEBHOOK
+                  valueFrom:
+                    secretKeyRef:
+                      name: alerting-config
+                      key: slack-webhook
+                      optional: true
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: aws-credentials
+                      key: secret-access-key
+                - name: AWS_DEFAULT_REGION
+                  value: "us-east-1"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+          volumes:
+            - name: scripts
+              configMap:
+                name: backup-scripts
+                defaultMode: 0755
+---
+# Secrets template (to be filled with actual values)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-credentials
+  namespace: social-protection
+type: Opaque
+stringData:
+  access-key-id: "REPLACE_WITH_AWS_ACCESS_KEY"
+  secret-access-key: "REPLACE_WITH_AWS_SECRET_KEY"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-credentials
+  namespace: social-protection
+type: Opaque
+stringData:
+  username: "postgres"
+  password: "REPLACE_WITH_POSTGRES_PASSWORD"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-credentials
+  namespace: social-protection
+type: Opaque
+stringData:
+  password: "REPLACE_WITH_REDIS_PASSWORD"

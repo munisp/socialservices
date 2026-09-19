@@ -1,0 +1,143 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hot-storage
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: hot
+provisioner: kubernetes.io/gce-pd
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: pd-ssd
+  replication-type: regional-pd
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: warm-storage
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: warm
+provisioner: kubernetes.io/gce-pd
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: pd-balanced
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: cold-storage
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: cold
+provisioner: kubernetes.io/gce-pd
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: pd-standard
+---
+# AWS EBS Storage Classes (alternative)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hot-storage-aws
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: hot
+    cloud: aws
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  iops: "16000"
+  throughput: "1000"
+  encrypted: "true"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: warm-storage-aws
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: warm
+    cloud: aws
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+  encrypted: "true"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: cold-storage-aws
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: cold
+    cloud: aws
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: sc1
+  encrypted: "true"
+---
+# Azure Disk Storage Classes (alternative)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hot-storage-azure
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: hot
+    cloud: azure
+provisioner: disk.csi.azure.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  skuName: Premium_LRS
+  cachingMode: ReadOnly
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: warm-storage-azure
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: warm
+    cloud: azure
+provisioner: disk.csi.azure.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  skuName: StandardSSD_LRS
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: cold-storage-azure
+  labels:
+    app.kubernetes.io/part-of: social-protection
+    tier: cold
+    cloud: azure
+provisioner: disk.csi.azure.com
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  skuName: Standard_LRS

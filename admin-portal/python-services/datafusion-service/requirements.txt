@@ -1,0 +1,4 @@
+flask==3.0.0
+datafusion==35.0.0
+pyarrow==15.0.0
+requests==2.31.0
