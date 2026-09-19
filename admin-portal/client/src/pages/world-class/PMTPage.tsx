@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PMTSurveyForm, PMTScoreResult } from "@/components/pmt/PMTSurveyForm";
+import { PMTSurveyForm, PMTScoreResult, calculatePMTScore } from "@/components/pmt/PMTSurveyForm";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
@@ -59,9 +59,7 @@ export default function PMTPage() {
             <TabsContent value="survey">
               <PMTSurveyForm
                 householdId={selectedHousehold}
-                onComplete={(result) => {
-                  setPmtResult(result);
-                }}
+                onSubmit={async (data) => { const result = calculatePMTScore(data); setPmtResult(result); return result; }}
               />
             </TabsContent>
             <TabsContent value="result">

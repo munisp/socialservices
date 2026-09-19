@@ -42,6 +42,8 @@ type ProductionLakehouseManager struct {
 // EventBuffer buffers events for batch writing
 type EventBuffer struct {
 	events    []ParquetEvent
+	messages  []kafka.Message
+	idempotencyKeys []string
 	mu        sync.Mutex
 	flushChan chan struct{}
 	lastFlush time.Time
@@ -243,6 +245,8 @@ func (lm *ProductionLakehouseManager) IngestFromKafka(topic string) error {
 	lm.kafkaReaders[topic] = reader
 	lm.eventBuffers[topic] = &EventBuffer{
 		events:    make([]ParquetEvent, 0, lm.config.BatchSize),
+		messages:  make([]kafka.Message, 0, lm.config.BatchSize),
+		idempotencyKeys: make([]string, 0, lm.config.BatchSize),
 		flushChan: make(chan struct{}, 1),
 		lastFlush: time.Now(),
 	}
@@ -316,21 +320,8 @@ func (lm *ProductionLakehouseManager) IngestFromKafka(topic string) error {
 					parquetEvent.MetadataJSON = string(metadataJSON)
 				}
 
-				// Add to buffer
-				lm.addToBuffer(topic, parquetEvent)
-
-				// Mark as processed
-				lm.offsetManager.MarkProcessed(idempotencyKey)
-
-				// Commit offset
-				if err := lm.offsetManager.CommitOffset(topic, msg.Partition, msg.Offset); err != nil {
-					log.Printf("[Lakehouse] Error committing offset: %v", err)
-				}
-
-				// Commit to Kafka
-				if err := reader.CommitMessages(lm.ctx, msg); err != nil {
-					log.Printf("[Lakehouse] Error committing to Kafka: %v", err)
-				}
+					// Buffer the message and acknowledge it only after Parquet persistence succeeds.
+					lm.addToBuffer(topic, parquetEvent, msg, idempotencyKey)
 
 				lm.metrics.mu.Lock()
 				lm.metrics.EventsIngested++
@@ -344,13 +335,15 @@ func (lm *ProductionLakehouseManager) IngestFromKafka(topic string) error {
 }
 
 // addToBuffer adds an event to the buffer
-func (lm *ProductionLakehouseManager) addToBuffer(topic string, event ParquetEvent) {
+func (lm *ProductionLakehouseManager) addToBuffer(topic string, event ParquetEvent, message kafka.Message, idempotencyKey string) {
 	lm.mu.RLock()
 	buffer := lm.eventBuffers[topic]
 	lm.mu.RUnlock()
 
 	buffer.mu.Lock()
 	buffer.events = append(buffer.events, event)
+	buffer.messages = append(buffer.messages, message)
+	buffer.idempotencyKeys = append(buffer.idempotencyKeys, idempotencyKey)
 	shouldFlush := len(buffer.events) >= lm.config.BatchSize
 	buffer.mu.Unlock()
 
@@ -399,7 +392,13 @@ func (lm *ProductionLakehouseManager) flushBuffer(topic string) {
 
 	events := make([]ParquetEvent, len(buffer.events))
 	copy(events, buffer.events)
+	messages := make([]kafka.Message, len(buffer.messages))
+	copy(messages, buffer.messages)
+	idempotencyKeys := make([]string, len(buffer.idempotencyKeys))
+	copy(idempotencyKeys, buffer.idempotencyKeys)
 	buffer.events = buffer.events[:0]
+	buffer.messages = buffer.messages[:0]
+	buffer.idempotencyKeys = buffer.idempotencyKeys[:0]
 	buffer.lastFlush = time.Now()
 	buffer.mu.Unlock()
 
@@ -409,9 +408,11 @@ func (lm *ProductionLakehouseManager) flushBuffer(topic string) {
 		partitionGroups[event.PartitionDate] = append(partitionGroups[event.PartitionDate], event)
 	}
 
-	// Write each partition group
+	// Write each partition group. Kafka acknowledgement happens only after all writes succeed.
+	writeOK := true
 	for partitionDate, partitionEvents := range partitionGroups {
 		if err := lm.writeParquetBatch(topic, partitionDate, partitionEvents); err != nil {
+			writeOK = false
 			log.Printf("[Lakehouse] Error writing batch: %v", err)
 			lm.metrics.mu.Lock()
 			lm.metrics.EventsFailed += int64(len(partitionEvents))
@@ -423,6 +424,20 @@ func (lm *ProductionLakehouseManager) flushBuffer(topic string) {
 			lm.metrics.LastWriteTime = time.Now()
 			lm.metrics.mu.Unlock()
 		}
+	}
+	if writeOK {
+		for i, msg := range messages {
+			if err := lm.kafkaReaders[topic].CommitMessages(lm.ctx, msg); err != nil { log.Printf("[Lakehouse] Kafka commit failed after durable write: %v", err); continue }
+			lm.offsetManager.MarkProcessed(idempotencyKeys[i])
+			if err := lm.offsetManager.CommitOffset(topic, msg.Partition, msg.Offset); err != nil { log.Printf("[Lakehouse] offset persistence failed: %v", err) }
+		}
+	} else {
+		// Requeue failed batches so a transient storage error cannot silently lose events.
+		buffer.mu.Lock()
+		buffer.events = append(events, buffer.events...)
+		buffer.messages = append(messages, buffer.messages...)
+		buffer.idempotencyKeys = append(idempotencyKeys, buffer.idempotencyKeys...)
+		buffer.mu.Unlock()
 	}
 
 	log.Printf("[Lakehouse] Flushed %d events for topic %s", len(events), topic)

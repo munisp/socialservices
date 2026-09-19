@@ -21,8 +21,6 @@ import { temporalUIRouter } from "./routers/temporalUI";
 import { workflowControlRouter } from "./routers/workflowControl";
 import { slaRouter } from "./routers/sla";
 import { templatesRouter } from "./routers/templates";
-import { analyticsRouter } from "./routers/analytics";
-import { approvalsRouter } from "./routers/approvals";
 import { auditRouter } from "./routers/audit";
 import { worldClassRouter } from "./routers/worldClass";
 
@@ -1528,13 +1526,10 @@ export const appRouter = router({
   workflow: workflowRouter,
   temporalUI: temporalUIRouter,
   workflowControl: workflowControlRouter,
-  sla: slaRouter,
-  templates: templatesRouter,
-  analytics: analyticsRouter,
-  approvals: approvalsRouter,
-  audit: auditRouter,
+	sla: slaRouter,
+	templates: templatesRouter,
+	audit: auditRouter,
   worldClass: worldClassRouter,
 });
 
 export type AppRouter = typeof appRouter;
-

@@ -132,6 +132,17 @@ export interface PMTScore {
   calculatedAt: string;
 }
 
+export function calculatePMTScore(data: HouseholdCharacteristics): PMTScore {
+  const housing = (Number(data.hasElectricity) + Number(data.hasPipedWater) + Number(data.hasFlushToilet) + (data.housingType === 'permanent' ? 2 : 0)) / 5;
+  const assets = (Number(data.ownsLand) + Number(data.ownsLivestock) + Number(data.ownsVehicle) + Number(data.ownsRefrigerator) + Number(data.ownsComputer)) / 5;
+  const demographics = Math.max(0, 1 - data.dependencyRatio / 3);
+  const humanCapital = Math.min(1, data.headEducationYears / 16);
+  const location = data.urbanRural === 'urban' ? 0.7 : data.urbanRural === 'peri-urban' ? 0.5 : 0.3;
+  const pmtScore = Math.round((housing * .25 + assets * .2 + demographics * .25 + humanCapital * .15 + location * .15) * 1000) / 10;
+  const eligibilityCategory = pmtScore < 20 ? 'extremely_poor' : pmtScore < 40 ? 'poor' : pmtScore < 60 ? 'vulnerable' : 'non_poor';
+  return { householdId: data.householdId, pmtScore, estimatedConsumption: Math.round(pmtScore * 100) / 100, eligibilityCategory, confidence: .6, componentScores: { housing: housing * 100, assets: assets * 100, demographics: demographics * 100, humanCapital: humanCapital * 100, location: location * 100 }, explanation: ['Local screening score; verify with programme policy and human review.'], calculatedAt: new Date().toISOString() };
+}
+
 const HOUSING_TYPES = [
   { value: 'permanent', label: 'Permanent (Brick/Concrete)' },
   { value: 'semi_permanent', label: 'Semi-Permanent' },
@@ -911,7 +922,7 @@ export function PMTSurveyForm({
 }
 
 // PMT Score Result Component
-function PMTScoreResult({ score, onReset }: { score: PMTScore; onReset: () => void }) {
+export function PMTScoreResult({ score, onReset }: { score: PMTScore; onReset?: () => void }) {
   const categoryColors = {
     extremely_poor: 'bg-red-500',
     poor: 'bg-orange-500',

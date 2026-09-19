@@ -1,0 +1,26 @@
+{
+  "version": "fraud-ml-42-20000",
+  "model_type": "pytorch_mlp",
+  "features": [
+    "amount_ngn",
+    "hour",
+    "day_of_year",
+    "velocity_24h",
+    "device_reuse",
+    "distance_km",
+    "beneficiary_age_days",
+    "mcc_risk"
+  ],
+  "weights": "fraud_mlp.pt",
+  "preprocess": "preprocess.pt",
+  "metrics": {
+    "accuracy": 0.63125,
+    "precision": 0.12800519818063677,
+    "recall": 0.5969696969696969,
+    "f1": 0.21080791867308724,
+    "support": 4000
+  },
+  "trained_on": "synthetic Nigerian-like data only",
+  "seed": 42,
+  "framework": "torch"
+}
