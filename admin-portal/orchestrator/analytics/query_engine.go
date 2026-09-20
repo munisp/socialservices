@@ -52,11 +52,11 @@ type QualityRule struct {
 
 // QualityResult stores the result of a quality check
 type QualityResult struct {
-	RuleName    string
-	Passed      bool
-	Message     string
+	RuleName       string
+	Passed         bool
+	Message        string
 	ViolationCount int64
-	CheckedAt   time.Time
+	CheckedAt      time.Time
 }
 
 // CDCProcessor processes Change Data Capture events
@@ -73,7 +73,7 @@ type CDCProcessor struct {
 
 // CDCEvent represents a change data capture event
 type CDCEvent struct {
-	Operation string                 // "insert", "update", "delete"
+	Operation string // "insert", "update", "delete"
 	Table     string
 	Before    map[string]interface{}
 	After     map[string]interface{}
@@ -170,10 +170,7 @@ func (qe *QueryEngine) createTable(tableName string, schema map[string]string) e
 
 // loadData loads data from Parquet files into SQLite
 func (qe *QueryEngine) loadData(tableName, location string) error {
-	// In production, use a proper Parquet reader
-	// For now, simulate loading
-	log.Printf("[QueryEngine] Loading data for table %s from %s", tableName, location)
-	return nil
+	return fmt.Errorf("Parquet-to-SQLite loading is unavailable for table %s at %s; use the production lakehouse query service", tableName, location)
 }
 
 // ExecuteQuery executes a SQL query
@@ -499,11 +496,9 @@ func (cdc *CDCProcessor) flush() error {
 	// Write to destination (simulate)
 	log.Printf("[CDC] Flushing %d events to %s", len(cdc.buffer), cdc.destination)
 
-	// Convert to Parquet events
-	for _, event := range cdc.buffer {
-		// Write event to lakehouse
-		// In production, integrate with ProductionLakehouseManager
-	}
+	// A durable lakehouse writer is not configured here. Retain the buffered events until
+	// a concrete writer is added rather than pretending that they were persisted.
+	return fmt.Errorf("CDC lakehouse writer is not configured")
 
 	// Clear buffer
 	cdc.buffer = cdc.buffer[:0]
@@ -555,9 +550,9 @@ func (cdc *CDCProcessor) GetStats() map[string]interface{} {
 	defer cdc.mu.Unlock()
 
 	return map[string]interface{}{
-		"source":       cdc.source,
-		"destination":  cdc.destination,
-		"buffer_size":  len(cdc.buffer),
+		"source":          cdc.source,
+		"destination":     cdc.destination,
+		"buffer_size":     len(cdc.buffer),
 		"has_transformer": cdc.transformer != nil,
 	}
 }

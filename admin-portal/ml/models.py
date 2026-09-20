@@ -9,6 +9,13 @@ class FraudMLP(nn.Module):
         self.net = nn.Sequential(nn.Linear(in_features, 64), nn.ReLU(), nn.Dropout(.15), nn.Linear(64, 32), nn.ReLU(), nn.Linear(32, 1))
     def forward(self, x): return self.net(x).squeeze(-1)
 
+class CreditRiskMLP(nn.Module):
+    """Tabular payment-default risk model; never used as a benefit eligibility rule."""
+    def __init__(self, in_features: int):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(in_features, 48), nn.GELU(), nn.Dropout(.1), nn.Linear(48, 24), nn.GELU(), nn.Linear(24, 1))
+    def forward(self, x): return self.net(x).squeeze(-1)
+
 class GraphSAGEFraud(nn.Module):
     """Small dependency-free GraphSAGE-style network for beneficiary/device graphs."""
     def __init__(self, in_features: int, hidden: int = 32):

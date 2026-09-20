@@ -7,7 +7,8 @@ def psi(reference, current, bins=10):
     if not reference or not current: return None
     lo,hi=min(reference+current),max(reference+current); width=max((hi-lo)/bins,1e-9); score=0.0
     for i in range(bins):
-        a=sum(lo+i*width<=v<lo+(i+1)*width for v in reference)/len(reference); b=sum(lo+i*width<=v<lo+(i+1)*width for v in current)/len(current); a=max(a,1e-6); b=max(b,1e-6); score+=(b-a)*math.log(b/a)
+        upper = lo+(i+1)*width
+        a=sum(lo+i*width<=v<upper or (i==bins-1 and v==hi) for v in reference)/len(reference); b=sum(lo+i*width<=v<upper or (i==bins-1 and v==hi) for v in current)/len(current); a=max(a,1e-6); b=max(b,1e-6); score+=(b-a)*math.log(b/a)
     return score
 
 def drift_status(score, warning=.1, critical=.25):

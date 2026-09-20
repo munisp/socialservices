@@ -1,10 +1,10 @@
 package journeys
 
 import (
-	"context"
 	"fmt"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -21,7 +21,7 @@ import (
 // Workflow: EnrollBeneficiaryWorkflow
 type BeneficiaryEnrollmentInput struct {
 	JourneyContext *JourneyContext `json:"journeyContext"`
-	
+
 	// Personal information
 	FirstName      string `json:"firstName"`
 	LastName       string `json:"lastName"`
@@ -29,27 +29,27 @@ type BeneficiaryEnrollmentInput struct {
 	Gender         string `json:"gender"`
 	NationalID     string `json:"nationalId"`
 	NationalIDType string `json:"nationalIdType"`
-	
+
 	// Contact information
-	Phone          string `json:"phone"`
-	Email          string `json:"email,omitempty"`
-	Address        string `json:"address"`
-	
+	Phone   string `json:"phone"`
+	Email   string `json:"email,omitempty"`
+	Address string `json:"address"`
+
 	// Location
-	Region         string `json:"region"`
-	District       string `json:"district"`
-	Ward           string `json:"ward,omitempty"`
-	Village        string `json:"village,omitempty"`
-	
+	Region   string `json:"region"`
+	District string `json:"district"`
+	Ward     string `json:"ward,omitempty"`
+	Village  string `json:"village,omitempty"`
+
 	// Household
-	HouseholdID    string `json:"householdId,omitempty"`
-	IsHeadOfHousehold bool `json:"isHeadOfHousehold"`
-	
+	HouseholdID       string `json:"householdId,omitempty"`
+	IsHeadOfHousehold bool   `json:"isHeadOfHousehold"`
+
 	// Documents
-	Documents      []DocumentInput `json:"documents,omitempty"`
-	
+	Documents []DocumentInput `json:"documents,omitempty"`
+
 	// Biometrics
-	BiometricData  *BiometricInput `json:"biometricData,omitempty"`
+	BiometricData *BiometricInput `json:"biometricData,omitempty"`
 }
 
 type DocumentInput struct {
@@ -59,32 +59,32 @@ type DocumentInput struct {
 }
 
 type BiometricInput struct {
-	Type       string `json:"type"` // "fingerprint", "face", "iris"
-	Template   string `json:"template"`
-	Quality    float64 `json:"quality"`
+	Type       string    `json:"type"` // "fingerprint", "face", "iris"
+	Template   string    `json:"template"`
+	Quality    float64   `json:"quality"`
 	CapturedAt time.Time `json:"capturedAt"`
 }
 
 type BeneficiaryEnrollmentResult struct {
-	JourneyRunID    string    `json:"journeyRunId"`
-	BeneficiaryID   string    `json:"beneficiaryId"`
-	Status          string    `json:"status"`
-	KYCStatus       string    `json:"kycStatus"`
-	AccountID       string    `json:"accountId,omitempty"`
-	CardRequested   bool      `json:"cardRequested"`
-	EnrolledAt      time.Time `json:"enrolledAt"`
-	NextSteps       []string  `json:"nextSteps,omitempty"`
+	JourneyRunID  string    `json:"journeyRunId"`
+	BeneficiaryID string    `json:"beneficiaryId"`
+	Status        string    `json:"status"`
+	KYCStatus     string    `json:"kycStatus"`
+	AccountID     string    `json:"accountId,omitempty"`
+	CardRequested bool      `json:"cardRequested"`
+	EnrolledAt    time.Time `json:"enrolledAt"`
+	NextSteps     []string  `json:"nextSteps,omitempty"`
 }
 
 // BeneficiaryEnrollmentJourney orchestrates the complete beneficiary enrollment process
 // This journey composes: EnrollBeneficiaryWorkflow + KYCVerificationWorkflow + CreateTigerBeetleAccount
 func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollmentInput) (*BeneficiaryEnrollmentResult, error) {
 	jc := input.JourneyContext
-	
+
 	// Activity options with retry
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -92,21 +92,21 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	var eventErr error
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType": "beneficiary_enrollment",
 		"nationalId":  input.NationalID,
 	}).Get(ctx, &eventErr)
-	
+
 	// Step 2: Check authorization via Permify
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "beneficiary:create").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed: %v", err)
 	}
-	
+
 	// Step 3: Check idempotency via Redis
 	var isDuplicate bool
 	err = workflow.ExecuteActivity(ctx, CheckIdempotencyActivity, jc.IdempotencyKey, "enrollment").Get(ctx, &isDuplicate)
@@ -116,14 +116,14 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 	if isDuplicate {
 		return nil, fmt.Errorf("duplicate enrollment request")
 	}
-	
+
 	// Step 4: Validate national ID via federation service
 	var idValid bool
 	err = workflow.ExecuteActivity(ctx, ValidateNationalIDActivity, input.NationalIDType, input.NationalID).Get(ctx, &idValid)
 	if err != nil {
 		return nil, fmt.Errorf("national ID validation failed: %v", err)
 	}
-	
+
 	// Step 5: Check for duplicate beneficiary
 	var existingID string
 	err = workflow.ExecuteActivity(ctx, CheckDuplicateBeneficiaryActivity, input.NationalID, input.Phone).Get(ctx, &existingID)
@@ -133,7 +133,7 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 	if existingID != "" {
 		return nil, fmt.Errorf("beneficiary already exists with ID: %s", existingID)
 	}
-	
+
 	// Step 6: Validate documents via OCR service
 	if len(input.Documents) > 0 {
 		var docsValid bool
@@ -142,7 +142,7 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 			return nil, fmt.Errorf("document validation failed: %v", err)
 		}
 	}
-	
+
 	// Step 7: Verify biometrics via biometric service
 	if input.BiometricData != nil {
 		var bioValid bool
@@ -151,7 +151,7 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 			return nil, fmt.Errorf("biometric verification failed: %v", err)
 		}
 	}
-	
+
 	// Step 8: Create beneficiary record in database
 	var beneficiaryID string
 	err = workflow.ExecuteActivity(ctx, CreateBeneficiaryRecordActivity, map[string]interface{}{
@@ -177,7 +177,7 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 	if err != nil {
 		return nil, fmt.Errorf("failed to create beneficiary record: %v", err)
 	}
-	
+
 	// Step 9: Create TigerBeetle account for payments
 	var accountID string
 	err = workflow.ExecuteActivity(ctx, CreateTigerBeetleAccountActivity, beneficiaryID, jc.TenantID).Get(ctx, &accountID)
@@ -185,29 +185,29 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 		// Non-fatal: account can be created later
 		workflow.GetLogger(ctx).Warn("Failed to create TigerBeetle account", "error", err)
 	}
-	
+
 	// Step 10: Publish Kafka event for downstream systems
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "beneficiary.enrolled", map[string]interface{}{
-		"beneficiaryId":  beneficiaryID,
-		"nationalId":     input.NationalID,
-		"tenantId":       jc.TenantID,
-		"correlationId":  jc.CorrelationID,
-		"enrolledBy":     jc.ActorID,
+		"beneficiaryId": beneficiaryID,
+		"nationalId":    input.NationalID,
+		"tenantId":      jc.TenantID,
+		"correlationId": jc.CorrelationID,
+		"enrolledBy":    jc.ActorID,
 	})
-	
+
 	// Step 11: Cache beneficiary data in Redis
 	workflow.ExecuteActivity(ctx, CacheBeneficiaryDataActivity, beneficiaryID, map[string]interface{}{
 		"firstName": input.FirstName,
 		"lastName":  input.LastName,
 		"status":    "pending_verification",
 	})
-	
+
 	// Step 12: Send SMS notification
 	workflow.ExecuteActivity(ctx, SendSMSNotificationActivity, input.Phone, fmt.Sprintf(
 		"Welcome %s! Your enrollment is being processed. Reference: %s",
 		input.FirstName, beneficiaryID,
 	))
-	
+
 	// Step 13: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "beneficiary_enrolled",
@@ -221,7 +221,7 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 			"source":     jc.Source,
 		},
 	})
-	
+
 	// Step 14: Write to lakehouse for analytics
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "enrollment_facts", map[string]interface{}{
 		"beneficiaryId":  beneficiaryID,
@@ -231,13 +231,13 @@ func BeneficiaryEnrollmentJourney(ctx workflow.Context, input BeneficiaryEnrollm
 		"source":         jc.Source,
 		"tenantId":       jc.TenantID,
 	})
-	
+
 	// Step 15: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"beneficiaryId": beneficiaryID,
 		"status":        "success",
 	})
-	
+
 	return &BeneficiaryEnrollmentResult{
 		JourneyRunID:  jc.JourneyRunID,
 		BeneficiaryID: beneficiaryID,
@@ -287,10 +287,10 @@ type KYCVerificationResult struct {
 // KYCVerificationJourney orchestrates the KYC verification process
 func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*KYCVerificationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 3 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    30 * time.Second,
@@ -298,26 +298,26 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "kyc_verification",
 		"beneficiaryId": input.BeneficiaryID,
 		"providerId":    input.ProviderID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "beneficiary:verify").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Validate consent
 	if !input.Consent.DataSharing || !input.Consent.TermsAccepted {
 		return nil, fmt.Errorf("consent not provided")
 	}
-	
+
 	// Step 4: Call federation service to verify identity
 	var verificationResult map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, VerifyIdentityFederationActivity, map[string]interface{}{
@@ -330,10 +330,10 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 	if err != nil {
 		return nil, fmt.Errorf("identity verification failed: %v", err)
 	}
-	
+
 	verified := verificationResult["verified"].(bool)
 	matchScore := verificationResult["matchScore"].(float64)
-	
+
 	// Step 5: Update beneficiary KYC status
 	var updateErr error
 	workflow.ExecuteActivity(ctx, UpdateBeneficiaryKYCStatusActivity, input.BeneficiaryID, map[string]interface{}{
@@ -342,7 +342,7 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 		"matchScore":  matchScore,
 		"verifiedAt":  time.Now(),
 	}).Get(ctx, &updateErr)
-	
+
 	// Step 6: Store verification record
 	var verificationID string
 	workflow.ExecuteActivity(ctx, CreateVerificationRecordActivity, map[string]interface{}{
@@ -354,15 +354,15 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 		"consentGiven":  true,
 		"verifiedBy":    jc.ActorID,
 	}).Get(ctx, &verificationID)
-	
+
 	// Step 7: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "beneficiary.kyc_completed", map[string]interface{}{
-		"beneficiaryId":  input.BeneficiaryID,
-		"verified":       verified,
-		"providerId":     input.ProviderID,
-		"correlationId":  jc.CorrelationID,
+		"beneficiaryId": input.BeneficiaryID,
+		"verified":      verified,
+		"providerId":    input.ProviderID,
+		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 8: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "kyc_verification",
@@ -377,7 +377,7 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 			"matchScore": matchScore,
 		},
 	})
-	
+
 	// Step 9: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "kyc_facts", map[string]interface{}{
 		"beneficiaryId":    input.BeneficiaryID,
@@ -387,15 +387,15 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 		"matchScore":       matchScore,
 		"tenantId":         jc.TenantID,
 	})
-	
+
 	// Step 10: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"beneficiaryId": input.BeneficiaryID,
 		"verified":      verified,
 	})
-	
+
 	demographics, _ := verificationResult["demographics"].(map[string]interface{})
-	
+
 	return &KYCVerificationResult{
 		JourneyRunID:   jc.JourneyRunID,
 		BeneficiaryID:  input.BeneficiaryID,
@@ -413,81 +413,81 @@ func KYCVerificationJourney(ctx workflow.Context, input KYCVerificationInput) (*
 // Workflow: HouseholdRegistrationWorkflow
 type HouseholdRegistrationInput struct {
 	JourneyContext *JourneyContext `json:"journeyContext"`
-	
+
 	// Head of household
-	HeadBeneficiaryID string `json:"headBeneficiaryId,omitempty"`
+	HeadBeneficiaryID string                      `json:"headBeneficiaryId,omitempty"`
 	HeadDetails       *BeneficiaryEnrollmentInput `json:"headDetails,omitempty"`
-	
+
 	// Household information
-	HouseholdName     string `json:"householdName"`
-	Address           string `json:"address"`
-	Region            string `json:"region"`
-	District          string `json:"district"`
-	Ward              string `json:"ward,omitempty"`
-	Village           string `json:"village,omitempty"`
-	GPSCoordinates    string `json:"gpsCoordinates,omitempty"`
-	
+	HouseholdName  string `json:"householdName"`
+	Address        string `json:"address"`
+	Region         string `json:"region"`
+	District       string `json:"district"`
+	Ward           string `json:"ward,omitempty"`
+	Village        string `json:"village,omitempty"`
+	GPSCoordinates string `json:"gpsCoordinates,omitempty"`
+
 	// Members
-	Members           []HouseholdMemberInput `json:"members"`
-	
+	Members []HouseholdMemberInput `json:"members"`
+
 	// Characteristics for PMT
-	Characteristics   *PMTCharacteristics `json:"characteristics,omitempty"`
+	Characteristics *PMTCharacteristics `json:"characteristics,omitempty"`
 }
 
 type HouseholdMemberInput struct {
-	BeneficiaryID     string `json:"beneficiaryId,omitempty"`
-	FirstName         string `json:"firstName"`
-	LastName          string `json:"lastName"`
-	DateOfBirth       string `json:"dateOfBirth"`
-	Gender            string `json:"gender"`
-	Relationship      string `json:"relationship"` // "spouse", "child", "parent", "sibling", "other"
-	NationalID        string `json:"nationalId,omitempty"`
+	BeneficiaryID string `json:"beneficiaryId,omitempty"`
+	FirstName     string `json:"firstName"`
+	LastName      string `json:"lastName"`
+	DateOfBirth   string `json:"dateOfBirth"`
+	Gender        string `json:"gender"`
+	Relationship  string `json:"relationship"` // "spouse", "child", "parent", "sibling", "other"
+	NationalID    string `json:"nationalId,omitempty"`
 }
 
 type PMTCharacteristics struct {
-	HouseholdSize     int      `json:"householdSize"`
-	ChildrenUnder5    int      `json:"childrenUnder5"`
-	ChildrenUnder18   int      `json:"childrenUnder18"`
-	ElderlyOver65     int      `json:"elderlyOver65"`
-	DisabledMembers   int      `json:"disabledMembers"`
-	HousingType       string   `json:"housingType"`
-	WallMaterial      string   `json:"wallMaterial"`
-	RoofMaterial      string   `json:"roofMaterial"`
-	FloorMaterial     string   `json:"floorMaterial"`
-	WaterSource       string   `json:"waterSource"`
-	SanitationType    string   `json:"sanitationType"`
-	CookingFuel       string   `json:"cookingFuel"`
-	ElectricityAccess bool     `json:"electricityAccess"`
-	NumberOfRooms     int      `json:"numberOfRooms"`
-	LandOwnership     float64  `json:"landOwnership"`
-	LivestockOwnership float64 `json:"livestockOwnership"`
-	VehicleOwnership  bool     `json:"vehicleOwnership"`
-	ApplianceOwnership []string `json:"applianceOwnership"`
-	UrbanRural        string   `json:"urbanRural"`
-	HasBankAccount    bool     `json:"hasBankAccount"`
-	ReceivesRemittances bool   `json:"receivesRemittances"`
-	HasHealthInsurance bool    `json:"hasHealthInsurance"`
-	ChildrenInSchool  int      `json:"childrenInSchool"`
-	FoodSecurityScore int      `json:"foodSecurityScore"`
+	HouseholdSize       int      `json:"householdSize"`
+	ChildrenUnder5      int      `json:"childrenUnder5"`
+	ChildrenUnder18     int      `json:"childrenUnder18"`
+	ElderlyOver65       int      `json:"elderlyOver65"`
+	DisabledMembers     int      `json:"disabledMembers"`
+	HousingType         string   `json:"housingType"`
+	WallMaterial        string   `json:"wallMaterial"`
+	RoofMaterial        string   `json:"roofMaterial"`
+	FloorMaterial       string   `json:"floorMaterial"`
+	WaterSource         string   `json:"waterSource"`
+	SanitationType      string   `json:"sanitationType"`
+	CookingFuel         string   `json:"cookingFuel"`
+	ElectricityAccess   bool     `json:"electricityAccess"`
+	NumberOfRooms       int      `json:"numberOfRooms"`
+	LandOwnership       float64  `json:"landOwnership"`
+	LivestockOwnership  float64  `json:"livestockOwnership"`
+	VehicleOwnership    bool     `json:"vehicleOwnership"`
+	ApplianceOwnership  []string `json:"applianceOwnership"`
+	UrbanRural          string   `json:"urbanRural"`
+	HasBankAccount      bool     `json:"hasBankAccount"`
+	ReceivesRemittances bool     `json:"receivesRemittances"`
+	HasHealthInsurance  bool     `json:"hasHealthInsurance"`
+	ChildrenInSchool    int      `json:"childrenInSchool"`
+	FoodSecurityScore   int      `json:"foodSecurityScore"`
 }
 
 type HouseholdRegistrationResult struct {
-	JourneyRunID    string    `json:"journeyRunId"`
-	HouseholdID     string    `json:"householdId"`
-	HeadID          string    `json:"headId"`
-	MemberCount     int       `json:"memberCount"`
-	PMTScore        float64   `json:"pmtScore,omitempty"`
-	PMTCategory     string    `json:"pmtCategory,omitempty"`
-	RegisteredAt    time.Time `json:"registeredAt"`
+	JourneyRunID string    `json:"journeyRunId"`
+	HouseholdID  string    `json:"householdId"`
+	HeadID       string    `json:"headId"`
+	MemberCount  int       `json:"memberCount"`
+	PMTScore     float64   `json:"pmtScore,omitempty"`
+	PMTCategory  string    `json:"pmtCategory,omitempty"`
+	RegisteredAt time.Time `json:"registeredAt"`
 }
 
 // HouseholdRegistrationJourney orchestrates household registration with PMT scoring
 func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrationInput) (*HouseholdRegistrationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -495,21 +495,21 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "household_registration",
 		"householdName": input.HouseholdName,
 		"memberCount":   len(input.Members),
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "household:create").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Create or get head of household
 	var headID string
 	if input.HeadBeneficiaryID != "" {
@@ -518,11 +518,11 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 		// Enroll head as new beneficiary
 		input.HeadDetails.IsHeadOfHousehold = true
 		input.HeadDetails.JourneyContext = jc
-		
+
 		childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
 			WorkflowID: fmt.Sprintf("enroll-head-%s", jc.JourneyRunID),
 		})
-		
+
 		var headResult *BeneficiaryEnrollmentResult
 		err = workflow.ExecuteChildWorkflow(childCtx, BeneficiaryEnrollmentJourney, *input.HeadDetails).Get(ctx, &headResult)
 		if err != nil {
@@ -532,7 +532,7 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 	} else {
 		return nil, fmt.Errorf("head of household not specified")
 	}
-	
+
 	// Step 4: Create household record
 	var householdID string
 	err = workflow.ExecuteActivity(ctx, CreateHouseholdRecordActivity, map[string]interface{}{
@@ -550,7 +550,7 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 	if err != nil {
 		return nil, fmt.Errorf("failed to create household: %v", err)
 	}
-	
+
 	// Step 5: Register household members
 	memberCount := 1 // Head already counted
 	for i, member := range input.Members {
@@ -576,12 +576,12 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 				continue
 			}
 		}
-		
+
 		// Link member to household
 		workflow.ExecuteActivity(ctx, LinkMemberToHouseholdActivity, householdID, memberID, member.Relationship)
 		memberCount++
 	}
-	
+
 	// Step 6: Calculate PMT score if characteristics provided
 	var pmtScore float64
 	var pmtCategory string
@@ -591,12 +591,12 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 		if err == nil {
 			pmtScore = pmtResult["score"].(float64)
 			pmtCategory = pmtResult["category"].(string)
-			
+
 			// Update household with PMT score
 			workflow.ExecuteActivity(ctx, UpdateHouseholdPMTActivity, householdID, pmtScore, pmtCategory)
 		}
 	}
-	
+
 	// Step 7: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "household.registered", map[string]interface{}{
 		"householdId":   householdID,
@@ -605,7 +605,7 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 		"pmtScore":      pmtScore,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 8: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "household_registered",
@@ -620,7 +620,7 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 			"district":    input.District,
 		},
 	})
-	
+
 	// Step 9: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "household_facts", map[string]interface{}{
 		"householdId":      householdID,
@@ -632,13 +632,13 @@ func HouseholdRegistrationJourney(ctx workflow.Context, input HouseholdRegistrat
 		"pmtCategory":      pmtCategory,
 		"tenantId":         jc.TenantID,
 	})
-	
+
 	// Step 10: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"householdId": householdID,
 		"memberCount": memberCount,
 	})
-	
+
 	return &HouseholdRegistrationResult{
 		JourneyRunID: jc.JourneyRunID,
 		HouseholdID:  householdID,
@@ -662,22 +662,22 @@ type ProgramEnrollmentInput struct {
 }
 
 type ProgramEnrollmentResult struct {
-	JourneyRunID   string    `json:"journeyRunId"`
-	EnrollmentID   string    `json:"enrollmentId"`
-	BeneficiaryID  string    `json:"beneficiaryId"`
-	ProgramID      string    `json:"programId"`
-	Status         string    `json:"status"`
-	EnrolledAt     time.Time `json:"enrolledAt"`
+	JourneyRunID      string    `json:"journeyRunId"`
+	EnrollmentID      string    `json:"enrollmentId"`
+	BeneficiaryID     string    `json:"beneficiaryId"`
+	ProgramID         string    `json:"programId"`
+	Status            string    `json:"status"`
+	EnrolledAt        time.Time `json:"enrolledAt"`
 	FirstDisbursement time.Time `json:"firstDisbursement,omitempty"`
 }
 
 // ProgramEnrollmentJourney orchestrates enrolling a beneficiary in a program
 func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput) (*ProgramEnrollmentResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -685,21 +685,21 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "program_enrollment",
 		"beneficiaryId": input.BeneficiaryID,
 		"programId":     input.ProgramID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "program:enroll").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Verify beneficiary exists and is active
 	var beneficiaryStatus string
 	err = workflow.ExecuteActivity(ctx, GetBeneficiaryStatusActivity, input.BeneficiaryID).Get(ctx, &beneficiaryStatus)
@@ -709,7 +709,7 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 	if beneficiaryStatus != "active" && beneficiaryStatus != "pending_verification" {
 		return nil, fmt.Errorf("beneficiary not eligible: status is %s", beneficiaryStatus)
 	}
-	
+
 	// Step 4: Verify program exists and is active
 	var programStatus string
 	err = workflow.ExecuteActivity(ctx, GetProgramStatusActivity, input.ProgramID).Get(ctx, &programStatus)
@@ -719,14 +719,14 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 	if programStatus != "active" {
 		return nil, fmt.Errorf("program not active: status is %s", programStatus)
 	}
-	
+
 	// Step 5: Check if already enrolled
 	var existingEnrollment string
 	workflow.ExecuteActivity(ctx, CheckExistingEnrollmentActivity, input.BeneficiaryID, input.ProgramID).Get(ctx, &existingEnrollment)
 	if existingEnrollment != "" {
 		return nil, fmt.Errorf("already enrolled in program: %s", existingEnrollment)
 	}
-	
+
 	// Step 6: Create enrollment record
 	var enrollmentID string
 	err = workflow.ExecuteActivity(ctx, CreateProgramEnrollmentActivity, map[string]interface{}{
@@ -740,7 +740,7 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enrollment: %v", err)
 	}
-	
+
 	// Step 7: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "beneficiary.program_enrolled", map[string]interface{}{
 		"enrollmentId":  enrollmentID,
@@ -748,7 +748,7 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 		"programId":     input.ProgramID,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 8: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "program_enrollment",
@@ -762,7 +762,7 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 			"programId":     input.ProgramID,
 		},
 	})
-	
+
 	// Step 9: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "enrollment_facts", map[string]interface{}{
 		"enrollmentId":   enrollmentID,
@@ -771,12 +771,12 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 		"enrollmentDate": time.Now().Format("2006-01-02"),
 		"tenantId":       jc.TenantID,
 	})
-	
+
 	// Step 10: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"enrollmentId": enrollmentID,
 	})
-	
+
 	return &ProgramEnrollmentResult{
 		JourneyRunID:  jc.JourneyRunID,
 		EnrollmentID:  enrollmentID,
@@ -792,30 +792,30 @@ func ProgramEnrollmentJourney(ctx workflow.Context, input ProgramEnrollmentInput
 // BFF: trpc.beneficiaries
 // Workflow: CardIssuanceWorkflow
 type CardIssuanceInput struct {
-	JourneyContext *JourneyContext `json:"journeyContext"`
-	BeneficiaryID  string          `json:"beneficiaryId"`
-	CardType       string          `json:"cardType"` // "physical", "virtual"
-	DeliveryAddress string         `json:"deliveryAddress,omitempty"`
+	JourneyContext  *JourneyContext `json:"journeyContext"`
+	BeneficiaryID   string          `json:"beneficiaryId"`
+	CardType        string          `json:"cardType"` // "physical", "virtual"
+	DeliveryAddress string          `json:"deliveryAddress,omitempty"`
 }
 
 type CardIssuanceResult struct {
-	JourneyRunID   string    `json:"journeyRunId"`
-	CardID         string    `json:"cardId"`
-	BeneficiaryID  string    `json:"beneficiaryId"`
-	CardType       string    `json:"cardType"`
-	Status         string    `json:"status"`
-	MaskedNumber   string    `json:"maskedNumber"`
-	IssuedAt       time.Time `json:"issuedAt"`
-	ExpiresAt      time.Time `json:"expiresAt"`
+	JourneyRunID  string    `json:"journeyRunId"`
+	CardID        string    `json:"cardId"`
+	BeneficiaryID string    `json:"beneficiaryId"`
+	CardType      string    `json:"cardType"`
+	Status        string    `json:"status"`
+	MaskedNumber  string    `json:"maskedNumber"`
+	IssuedAt      time.Time `json:"issuedAt"`
+	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
 // CardIssuanceJourney orchestrates card issuance for a beneficiary
 func CardIssuanceJourney(ctx workflow.Context, input CardIssuanceInput) (*CardIssuanceResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -823,42 +823,42 @@ func CardIssuanceJourney(ctx workflow.Context, input CardIssuanceInput) (*CardIs
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "card_issuance",
 		"beneficiaryId": input.BeneficiaryID,
 		"cardType":      input.CardType,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "card:issue").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Verify beneficiary has TigerBeetle account
 	var accountID string
 	err = workflow.ExecuteActivity(ctx, GetBeneficiaryAccountActivity, input.BeneficiaryID).Get(ctx, &accountID)
 	if err != nil || accountID == "" {
 		return nil, fmt.Errorf("beneficiary does not have a payment account")
 	}
-	
+
 	// Step 4: Check for existing active card
 	var existingCard string
 	workflow.ExecuteActivity(ctx, CheckExistingCardActivity, input.BeneficiaryID).Get(ctx, &existingCard)
 	if existingCard != "" {
 		return nil, fmt.Errorf("beneficiary already has an active card: %s", existingCard)
 	}
-	
+
 	// Step 5: Generate card details
 	var cardDetails map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GenerateCardDetailsActivity, input.BeneficiaryID, input.CardType).Get(ctx, &cardDetails)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate card: %v", err)
 	}
-	
+
 	// Step 6: Create card record
 	var cardID string
 	err = workflow.ExecuteActivity(ctx, CreateCardRecordActivity, map[string]interface{}{
@@ -875,15 +875,15 @@ func CardIssuanceJourney(ctx workflow.Context, input CardIssuanceInput) (*CardIs
 	if err != nil {
 		return nil, fmt.Errorf("failed to create card record: %v", err)
 	}
-	
+
 	// Step 7: If physical card, initiate delivery
 	if input.CardType == "physical" && input.DeliveryAddress != "" {
 		workflow.ExecuteActivity(ctx, InitiateCardDeliveryActivity, cardID, input.DeliveryAddress)
 	}
-	
+
 	// Step 8: Send notification
 	workflow.ExecuteActivity(ctx, SendCardIssuanceNotificationActivity, input.BeneficiaryID, cardID, input.CardType)
-	
+
 	// Step 9: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "card.issued", map[string]interface{}{
 		"cardId":        cardID,
@@ -891,7 +891,7 @@ func CardIssuanceJourney(ctx workflow.Context, input CardIssuanceInput) (*CardIs
 		"cardType":      input.CardType,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 10: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "card_issued",
@@ -905,15 +905,15 @@ func CardIssuanceJourney(ctx workflow.Context, input CardIssuanceInput) (*CardIs
 			"cardType":      input.CardType,
 		},
 	})
-	
+
 	// Step 11: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"cardId": cardID,
 	})
-	
+
 	expiresAt, _ := cardDetails["expiresAt"].(time.Time)
 	maskedNumber, _ := cardDetails["maskedNumber"].(string)
-	
+
 	return &CardIssuanceResult{
 		JourneyRunID:  jc.JourneyRunID,
 		CardID:        cardID,
@@ -929,59 +929,59 @@ func CardIssuanceJourney(ctx workflow.Context, input CardIssuanceInput) (*CardIs
 // RegisterEnrollmentJourneys registers all enrollment journey definitions
 func RegisterEnrollmentJourneys(registry *JourneyRegistry) {
 	registry.Register(&JourneyDefinition{
-		Key:          "beneficiary_enrollment",
-		Name:         "Beneficiary Enrollment",
-		Description:  "Complete end-to-end beneficiary enrollment with KYC and account creation",
-		Category:     "enrollment",
-		WorkflowType: "BeneficiaryEnrollmentJourney",
+		Key:                 "beneficiary_enrollment",
+		Name:                "Beneficiary Enrollment",
+		Description:         "Complete end-to-end beneficiary enrollment with KYC and account creation",
+		Category:            "enrollment",
+		WorkflowType:        "BeneficiaryEnrollmentJourney",
 		RequiredPermissions: []string{"beneficiary:create", "beneficiary:verify"},
 		UIEntryPoints:       []string{"Mobile:EnrollBeneficiaryScreen", "Admin:BeneficiariesPage"},
 		BFFEndpoints:        []string{"trpc.beneficiaries.create"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "tigerbeetle", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "kyc_verification",
-		Name:         "KYC Verification",
-		Description:  "Verify beneficiary identity via national ID federation",
-		Category:     "enrollment",
-		WorkflowType: "KYCVerificationJourney",
+		Key:                 "kyc_verification",
+		Name:                "KYC Verification",
+		Description:         "Verify beneficiary identity via national ID federation",
+		Category:            "enrollment",
+		WorkflowType:        "KYCVerificationJourney",
 		RequiredPermissions: []string{"beneficiary:verify"},
 		UIEntryPoints:       []string{"Mobile:VerifyIDScreen", "Admin:BeneficiaryDetailPage"},
 		BFFEndpoints:        []string{"trpc.worldClass.federation.verify"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "household_registration",
-		Name:         "Household Registration",
-		Description:  "Register household with members and PMT scoring",
-		Category:     "enrollment",
-		WorkflowType: "HouseholdRegistrationJourney",
+		Key:                 "household_registration",
+		Name:                "Household Registration",
+		Description:         "Register household with members and PMT scoring",
+		Category:            "enrollment",
+		WorkflowType:        "HouseholdRegistrationJourney",
 		RequiredPermissions: []string{"household:create", "beneficiary:create"},
 		UIEntryPoints:       []string{"Mobile:HouseholdsScreen"},
 		BFFEndpoints:        []string{"trpc.beneficiaries.createHousehold"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "pmt-service", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "program_enrollment",
-		Name:         "Program Enrollment",
-		Description:  "Enroll beneficiary in a benefit program",
-		Category:     "enrollment",
-		WorkflowType: "ProgramEnrollmentJourney",
+		Key:                 "program_enrollment",
+		Name:                "Program Enrollment",
+		Description:         "Enroll beneficiary in a benefit program",
+		Category:            "enrollment",
+		WorkflowType:        "ProgramEnrollmentJourney",
 		RequiredPermissions: []string{"program:enroll"},
 		UIEntryPoints:       []string{"Admin:ProgramsPage", "Admin:BeneficiaryDetailPage"},
 		BFFEndpoints:        []string{"trpc.programs.enroll"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "card_issuance",
-		Name:         "Card Issuance",
-		Description:  "Issue payment card to beneficiary",
-		Category:     "enrollment",
-		WorkflowType: "CardIssuanceJourney",
+		Key:                 "card_issuance",
+		Name:                "Card Issuance",
+		Description:         "Issue payment card to beneficiary",
+		Category:            "enrollment",
+		WorkflowType:        "CardIssuanceJourney",
 		RequiredPermissions: []string{"card:issue"},
 		UIEntryPoints:       []string{"Admin:BeneficiaryDetailPage"},
 		BFFEndpoints:        []string{"trpc.beneficiaries.issueCard"},

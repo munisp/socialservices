@@ -435,7 +435,7 @@ export function CrossSectorProfileView({
       <ConsentDialog
         open={showConsentDialog}
         onOpenChange={setShowConsentDialog}
-        sector={selectedSector ? SECTORS.find(s => s.id === selectedSector) : null}
+        sector={selectedSector ? (SECTORS.find(s => s.id === selectedSector) ?? null) : null}
         onGrant={(dataTypes) => selectedSector && handleGrantConsent(selectedSector, dataTypes)}
       />
     </div>

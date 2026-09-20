@@ -1,0 +1,7 @@
+torch>=2.2
+pandas>=2.1
+pyarrow>=14
+pymysql>=1.1
+neo4j>=5.20
+ray[default]>=2.9,<3
+mlflow>=2.12,<4

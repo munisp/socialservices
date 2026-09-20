@@ -593,7 +593,7 @@ export const journeyRouter = router({
   startProfileUpdate: protectedProcedure
     .input(z.object({
       beneficiaryId: z.string(),
-      updates: z.record(z.any()),
+      updates: z.record(z.string(), z.any()),
     }))
     .mutation(async ({ input, ctx }) => {
       return callGoService("/api/journeys/profile-update/start", "POST", {
@@ -699,7 +699,7 @@ export const journeyRouter = router({
       operationType: z.enum(["suspend", "reactivate", "enroll", "update", "export"]),
       entityType: z.enum(["beneficiary", "household", "program"]),
       entityIds: z.array(z.string()),
-      parameters: z.record(z.any()).optional(),
+      parameters: z.record(z.string(), z.any()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       return callGoService("/api/journeys/bulk-operation/start", "POST", {
@@ -779,7 +779,7 @@ export const journeyRouter = router({
     .input(z.object({
       exportType: z.enum(["beneficiaries", "disbursements", "grievances", "programs"]),
       format: z.enum(["csv", "excel", "json"]),
-      filters: z.record(z.any()).optional(),
+      filters: z.record(z.string(), z.any()).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       return callGoService("/api/journeys/data-export/start", "POST", {

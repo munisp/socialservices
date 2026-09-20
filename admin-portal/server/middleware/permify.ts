@@ -104,7 +104,8 @@ entity organization {
 export async function writeAuthorizationSchema(): Promise<void> {
   const client = getPermifyClient();
   if (!client) {
-    console.warn("[Permify] Client not available, skipping schema write");
+    if (process.env.NODE_ENV === "production") throw new Error("Permify is required in production");
+    console.warn("[Permify] Client not available, skipping development schema write");
     return;
   }
 
@@ -133,7 +134,8 @@ export async function createRelationship(params: {
 }): Promise<void> {
   const client = getPermifyClient();
   if (!client) {
-    console.warn("[Permify] Client not available, skipping relationship creation");
+    if (process.env.NODE_ENV === "production") throw new Error("Permify relationship write refused: service unavailable");
+    console.warn("[Permify] Client not available, skipping development relationship creation");
     return;
   }
 
@@ -179,6 +181,7 @@ export async function deleteRelationship(params: {
 }): Promise<void> {
   const client = getPermifyClient();
   if (!client) {
+    if (process.env.NODE_ENV === "production") throw new Error("Permify relationship delete refused: service unavailable");
     return;
   }
 

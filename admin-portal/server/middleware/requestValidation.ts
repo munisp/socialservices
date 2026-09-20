@@ -108,7 +108,7 @@ export const disbursementSchema = z.object({
   currency: z.string().length(3), // ISO 4217
   paymentMethod: z.enum(["bank_transfer", "mobile_money", "cash", "voucher"]),
   idempotencyKey: z.string().uuid("Idempotency key must be a valid UUID"),
-  metadata: z.record(z.string()).optional(),
+  metadata: z.record(z.string(), z.string()).optional(),
 });
 
 // Interoperability consent validation
@@ -147,7 +147,7 @@ export function sanitizeObject<T extends Record<string, unknown>>(obj: T): T {
 export function validateInput<T>(schema: z.ZodSchema<T>, input: unknown): T {
   const result = schema.safeParse(input);
   if (!result.success) {
-    const errors = result.error.errors.map(e => `${e.path.join(".")}: ${e.message}`).join(", ");
+    const errors = result.error.issues.map((e: z.core.$ZodIssue) => `${e.path.join(".")}: ${e.message}`).join(", ");
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: `Validation failed: ${errors}`,

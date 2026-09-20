@@ -326,6 +326,12 @@ export async function rejectBeneficiary(id: number) {
     .where(eq(beneficiaries.id, id));
 }
 
+export async function suspendBeneficiary(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(beneficiaries).set({ enrollmentStatus: "suspended" }).where(eq(beneficiaries.id, id));
+}
+
 // Program Enrollment operations
 export async function getBeneficiaryEnrollments(beneficiaryId: number) {
   const db = await getDb();

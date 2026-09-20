@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -47,10 +48,10 @@ type FraudInvestigationResult struct {
 // FraudInvestigationJourney orchestrates fraud investigation
 func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInput) (*FraudInvestigationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -58,35 +59,35 @@ func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInp
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event (high priority)
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "fraud_investigation",
 		"beneficiaryId": input.BeneficiaryID,
 		"priority":      input.Priority,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "fraud:investigate").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Verify beneficiary exists
 	var beneficiaryExists bool
 	err = workflow.ExecuteActivity(ctx, CheckBeneficiaryExistsActivity, input.BeneficiaryID).Get(ctx, &beneficiaryExists)
 	if err != nil || !beneficiaryExists {
 		return nil, fmt.Errorf("beneficiary not found")
 	}
-	
+
 	// Step 4: Generate case number
 	var caseNumber string
 	err = workflow.ExecuteActivity(ctx, GenerateFraudCaseNumberActivity).Get(ctx, &caseNumber)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate case number: %v", err)
 	}
-	
+
 	// Step 5: Calculate initial risk score using ML service
 	var riskScore float64
 	err = workflow.ExecuteActivity(ctx, CalculateFraudRiskScoreActivity, input.BeneficiaryID, input.ReportType, input.Description).Get(ctx, &riskScore)
@@ -94,7 +95,7 @@ func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInp
 		workflow.GetLogger(ctx).Warn("Failed to calculate risk score", "error", err)
 		riskScore = 0.5 // Default medium risk
 	}
-	
+
 	// Step 6: Create investigation record
 	var investigationID string
 	err = workflow.ExecuteActivity(ctx, CreateFraudInvestigationActivity, map[string]interface{}{
@@ -113,30 +114,30 @@ func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInp
 	if err != nil {
 		return nil, fmt.Errorf("failed to create investigation: %v", err)
 	}
-	
+
 	// Step 7: Auto-assign investigator based on priority and workload
 	var assignedTo string
 	err = workflow.ExecuteActivity(ctx, AutoAssignFraudInvestigatorActivity, investigationID, input.Priority, riskScore).Get(ctx, &assignedTo)
 	if err != nil {
 		workflow.GetLogger(ctx).Warn("Failed to auto-assign investigator", "error", err)
 	}
-	
+
 	// Step 8: If high risk, temporarily suspend beneficiary
 	if riskScore >= 0.8 || input.Priority == "critical" {
 		workflow.ExecuteActivity(ctx, TemporarySuspendBeneficiaryActivity, input.BeneficiaryID, investigationID, "Pending fraud investigation")
 	}
-	
+
 	// Step 9: Gather transaction history
 	workflow.ExecuteActivity(ctx, GatherTransactionHistoryActivity, input.BeneficiaryID, investigationID)
-	
+
 	// Step 10: Cross-reference with other beneficiaries (duplicate detection)
 	workflow.ExecuteActivity(ctx, CrossReferenceBeneficiaryActivity, input.BeneficiaryID, investigationID)
-	
+
 	// Step 11: Send notification to investigator
 	if assignedTo != "" {
 		workflow.ExecuteActivity(ctx, SendFraudAssignmentNotificationActivity, assignedTo, investigationID, caseNumber, input.Priority)
 	}
-	
+
 	// Step 12: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "fraud.investigation_opened", map[string]interface{}{
 		"investigationId": investigationID,
@@ -146,7 +147,7 @@ func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInp
 		"riskScore":       riskScore,
 		"correlationId":   jc.CorrelationID,
 	})
-	
+
 	// Step 13: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "fraud_investigation_opened",
@@ -164,7 +165,7 @@ func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInp
 			"riskScore":     riskScore,
 		},
 	})
-	
+
 	// Step 14: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "fraud_investigation_facts", map[string]interface{}{
 		"investigationId": investigationID,
@@ -175,13 +176,13 @@ func FraudInvestigationJourney(ctx workflow.Context, input FraudInvestigationInp
 		"riskScore":       riskScore,
 		"tenantId":        jc.TenantID,
 	})
-	
+
 	// Step 15: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"investigationId": investigationID,
 		"caseNumber":      caseNumber,
 	})
-	
+
 	return &FraudInvestigationResult{
 		JourneyRunID:    jc.JourneyRunID,
 		InvestigationID: investigationID,
@@ -218,10 +219,10 @@ type FraudPredictionResult struct {
 // FraudPredictionJourney orchestrates ML-based fraud prediction
 func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*FraudPredictionResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -229,20 +230,20 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType": "fraud_prediction",
 		"scope":       input.Scope,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "fraud:predict").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Create prediction record
 	var predictionID string
 	err = workflow.ExecuteActivity(ctx, CreateFraudPredictionRecordActivity, map[string]interface{}{
@@ -257,7 +258,7 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 	if err != nil {
 		return nil, fmt.Errorf("failed to create prediction record: %v", err)
 	}
-	
+
 	// Step 4: Get beneficiaries to scan based on scope
 	var beneficiaryIDs []string
 	switch input.Scope {
@@ -271,25 +272,25 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 	if err != nil {
 		return nil, fmt.Errorf("failed to get beneficiaries: %v", err)
 	}
-	
+
 	// Step 5: Get ML model version
 	modelVersion := input.ModelVersion
 	if modelVersion == "" {
 		workflow.ExecuteActivity(ctx, GetLatestFraudModelVersionActivity).Get(ctx, &modelVersion)
 	}
-	
+
 	// Step 6: Run predictions in batches
 	batchSize := 100
 	alertsGenerated := 0
 	highRiskCount := 0
-	
+
 	for i := 0; i < len(beneficiaryIDs); i += batchSize {
 		end := i + batchSize
 		if end > len(beneficiaryIDs) {
 			end = len(beneficiaryIDs)
 		}
 		batch := beneficiaryIDs[i:end]
-		
+
 		// Call ML service for batch prediction
 		var predictions []map[string]interface{}
 		err = workflow.ExecuteActivity(ctx, RunMLFraudPredictionActivity, batch, modelVersion).Get(ctx, &predictions)
@@ -297,12 +298,12 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 			workflow.GetLogger(ctx).Warn("Batch prediction failed", "batch", i, "error", err)
 			continue
 		}
-		
+
 		// Process predictions
 		for _, pred := range predictions {
 			riskScore := pred["riskScore"].(float64)
 			beneficiaryID := pred["beneficiaryId"].(string)
-			
+
 			if riskScore >= input.Threshold {
 				// Generate alert
 				workflow.ExecuteActivity(ctx, CreateFraudAlertActivity, map[string]interface{}{
@@ -313,18 +314,18 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 					"factors":       pred["factors"],
 				})
 				alertsGenerated++
-				
+
 				if riskScore >= 0.8 {
 					highRiskCount++
 				}
 			}
 		}
-		
+
 		// Update progress
 		progress := float64(end) / float64(len(beneficiaryIDs)) * 100
 		workflow.ExecuteActivity(ctx, UpdateFraudPredictionProgressActivity, predictionID, progress)
 	}
-	
+
 	// Step 7: Update prediction record
 	workflow.ExecuteActivity(ctx, UpdateFraudPredictionRecordActivity, predictionID, map[string]interface{}{
 		"status":          "completed",
@@ -333,12 +334,12 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 		"highRiskCount":   highRiskCount,
 		"modelVersion":    modelVersion,
 	})
-	
+
 	// Step 8: Notify fraud team if high-risk alerts generated
 	if highRiskCount > 0 {
 		workflow.ExecuteActivity(ctx, NotifyFraudTeamActivity, predictionID, highRiskCount)
 	}
-	
+
 	// Step 9: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "fraud.prediction_completed", map[string]interface{}{
 		"predictionId":    predictionID,
@@ -347,7 +348,7 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 		"highRiskCount":   highRiskCount,
 		"correlationId":   jc.CorrelationID,
 	})
-	
+
 	// Step 10: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "fraud_prediction_completed",
@@ -364,7 +365,7 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 			"modelVersion":    modelVersion,
 		},
 	})
-	
+
 	// Step 11: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "fraud_prediction_facts", map[string]interface{}{
 		"predictionId":    predictionID,
@@ -376,13 +377,13 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 		"modelVersion":    modelVersion,
 		"tenantId":        jc.TenantID,
 	})
-	
+
 	// Step 12: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"predictionId":    predictionID,
 		"alertsGenerated": alertsGenerated,
 	})
-	
+
 	return &FraudPredictionResult{
 		JourneyRunID:    jc.JourneyRunID,
 		PredictionID:    predictionID,
@@ -399,13 +400,13 @@ func FraudPredictionJourney(ctx workflow.Context, input FraudPredictionInput) (*
 // BFF: trpc.worldClass.federation.verify
 // Workflow: NationalIDVerificationWorkflow
 type NationalIDVerificationInput struct {
-	JourneyContext *JourneyContext `json:"journeyContext"`
-	BeneficiaryID  string          `json:"beneficiaryId"`
-	ProviderID     string          `json:"providerId"` // "nin", "nida", "aadhaar", etc.
-	NationalID     string          `json:"nationalId"`
-	VerificationType string        `json:"verificationType"` // "demographic", "biometric", "otp"
-	BiometricData  *BiometricInput `json:"biometricData,omitempty"`
-	OTP            string          `json:"otp,omitempty"`
+	JourneyContext   *JourneyContext `json:"journeyContext"`
+	BeneficiaryID    string          `json:"beneficiaryId"`
+	ProviderID       string          `json:"providerId"` // "nin", "nida", "aadhaar", etc.
+	NationalID       string          `json:"nationalId"`
+	VerificationType string          `json:"verificationType"` // "demographic", "biometric", "otp"
+	BiometricData    *BiometricInput `json:"biometricData,omitempty"`
+	OTP              string          `json:"otp,omitempty"`
 }
 
 type NationalIDVerificationResult struct {
@@ -420,10 +421,10 @@ type NationalIDVerificationResult struct {
 // NationalIDVerificationJourney orchestrates national ID verification via federation
 func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerificationInput) (*NationalIDVerificationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    30 * time.Second,
@@ -431,7 +432,7 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":      "national_id_verification",
@@ -439,21 +440,21 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 		"providerId":       input.ProviderID,
 		"verificationType": input.VerificationType,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "identity:verify").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Validate provider is supported
 	var providerSupported bool
 	err = workflow.ExecuteActivity(ctx, CheckFederationProviderActivity, input.ProviderID).Get(ctx, &providerSupported)
 	if err != nil || !providerSupported {
 		return nil, fmt.Errorf("identity provider not supported: %s", input.ProviderID)
 	}
-	
+
 	// Step 4: Create verification record
 	var verificationID string
 	err = workflow.ExecuteActivity(ctx, CreateIdentityVerificationRecordActivity, map[string]interface{}{
@@ -468,7 +469,7 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 	if err != nil {
 		return nil, fmt.Errorf("failed to create verification record: %v", err)
 	}
-	
+
 	// Step 5: Call federation service based on verification type
 	var verificationResult map[string]interface{}
 	switch input.VerificationType {
@@ -487,16 +488,16 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 	default:
 		return nil, fmt.Errorf("unsupported verification type: %s", input.VerificationType)
 	}
-	
+
 	if err != nil {
 		workflow.ExecuteActivity(ctx, UpdateIdentityVerificationStatusActivity, verificationID, "failed", err.Error())
 		return nil, fmt.Errorf("verification failed: %v", err)
 	}
-	
+
 	verified := verificationResult["verified"].(bool)
 	matchScore := verificationResult["matchScore"].(float64)
 	demographics, _ := verificationResult["demographics"].(map[string]interface{})
-	
+
 	// Step 6: Update verification record
 	workflow.ExecuteActivity(ctx, UpdateIdentityVerificationResultActivity, verificationID, map[string]interface{}{
 		"status":       "completed",
@@ -504,7 +505,7 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 		"matchScore":   matchScore,
 		"demographics": demographics,
 	})
-	
+
 	// Step 7: Update beneficiary KYC status if verified
 	if verified {
 		workflow.ExecuteActivity(ctx, UpdateBeneficiaryKYCStatusActivity, input.BeneficiaryID, map[string]interface{}{
@@ -514,7 +515,7 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 			"verifiedAt":  time.Now(),
 		})
 	}
-	
+
 	// Step 8: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "identity.verified", map[string]interface{}{
 		"verificationId": verificationID,
@@ -524,7 +525,7 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 		"matchScore":     matchScore,
 		"correlationId":  jc.CorrelationID,
 	})
-	
+
 	// Step 9: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "identity_verified",
@@ -541,7 +542,7 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 			"matchScore":       matchScore,
 		},
 	})
-	
+
 	// Step 10: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "identity_verification_facts", map[string]interface{}{
 		"verificationId":   verificationID,
@@ -553,13 +554,13 @@ func NationalIDVerificationJourney(ctx workflow.Context, input NationalIDVerific
 		"matchScore":       matchScore,
 		"tenantId":         jc.TenantID,
 	})
-	
+
 	// Step 11: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"verificationId": verificationID,
 		"verified":       verified,
 	})
-	
+
 	return &NationalIDVerificationResult{
 		JourneyRunID:   jc.JourneyRunID,
 		VerificationID: verificationID,
@@ -584,22 +585,22 @@ type CrossSectorInteropInput struct {
 }
 
 type CrossSectorInteropResult struct {
-	JourneyRunID  string                 `json:"journeyRunId"`
-	InteropID     string                 `json:"interopId"`
-	TargetSector  string                 `json:"targetSector"`
-	Operation     string                 `json:"operation"`
-	Success       bool                   `json:"success"`
-	Data          map[string]interface{} `json:"data,omitempty"`
-	CompletedAt   time.Time              `json:"completedAt"`
+	JourneyRunID string                 `json:"journeyRunId"`
+	InteropID    string                 `json:"interopId"`
+	TargetSector string                 `json:"targetSector"`
+	Operation    string                 `json:"operation"`
+	Success      bool                   `json:"success"`
+	Data         map[string]interface{} `json:"data,omitempty"`
+	CompletedAt  time.Time              `json:"completedAt"`
 }
 
 // CrossSectorInteropJourney orchestrates cross-sector data interoperability
 func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInput) (*CrossSectorInteropResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -607,7 +608,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "cross_sector_interop",
@@ -615,7 +616,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 		"targetSector":  input.TargetSector,
 		"operation":     input.Operation,
 	})
-	
+
 	// Step 2: Check authorization
 	permission := fmt.Sprintf("interop:%s:%s", input.TargetSector, input.Operation)
 	var authorized bool
@@ -623,19 +624,19 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed for %s", permission)
 	}
-	
+
 	// Step 3: Verify consent
 	if !input.Consent {
 		return nil, fmt.Errorf("consent required for cross-sector data sharing")
 	}
-	
+
 	// Step 4: Verify beneficiary exists
 	var beneficiaryExists bool
 	err = workflow.ExecuteActivity(ctx, CheckBeneficiaryExistsActivity, input.BeneficiaryID).Get(ctx, &beneficiaryExists)
 	if err != nil || !beneficiaryExists {
 		return nil, fmt.Errorf("beneficiary not found")
 	}
-	
+
 	// Step 5: Create interop record
 	var interopID string
 	err = workflow.ExecuteActivity(ctx, CreateInteropRecordActivity, map[string]interface{}{
@@ -651,11 +652,11 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 	if err != nil {
 		return nil, fmt.Errorf("failed to create interop record: %v", err)
 	}
-	
+
 	// Step 6: Execute interop operation based on sector
 	var result map[string]interface{}
 	var success bool
-	
+
 	switch input.Operation {
 	case "query":
 		// Query data from target sector
@@ -674,7 +675,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 	default:
 		return nil, fmt.Errorf("unsupported operation: %s", input.Operation)
 	}
-	
+
 	// Step 7: Update interop record
 	status := "completed"
 	if !success {
@@ -685,7 +686,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 		"success": success,
 		"result":  result,
 	})
-	
+
 	// Step 8: Store consent record
 	workflow.ExecuteActivity(ctx, StoreConsentRecordActivity, map[string]interface{}{
 		"interopId":     interopID,
@@ -696,7 +697,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 		"consentGiven":  input.Consent,
 		"consentDate":   time.Now(),
 	})
-	
+
 	// Step 9: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "interop.completed", map[string]interface{}{
 		"interopId":     interopID,
@@ -706,7 +707,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 		"success":       success,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 10: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "cross_sector_interop",
@@ -723,7 +724,7 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 			"dataFields":    input.DataFields,
 		},
 	})
-	
+
 	// Step 11: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "interop_facts", map[string]interface{}{
 		"interopId":     interopID,
@@ -734,13 +735,13 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 		"success":       success,
 		"tenantId":      jc.TenantID,
 	})
-	
+
 	// Step 12: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"interopId": interopID,
 		"success":   success,
 	})
-	
+
 	return &CrossSectorInteropResult{
 		JourneyRunID: jc.JourneyRunID,
 		InteropID:    interopID,
@@ -755,47 +756,47 @@ func CrossSectorInteropJourney(ctx workflow.Context, input CrossSectorInteropInp
 // RegisterFraudJourneys registers all fraud/compliance journey definitions
 func RegisterFraudJourneys(registry *JourneyRegistry) {
 	registry.Register(&JourneyDefinition{
-		Key:          "fraud_investigation",
-		Name:         "Fraud Investigation",
-		Description:  "Open and manage fraud investigation case",
-		Category:     "fraud",
-		WorkflowType: "FraudInvestigationJourney",
+		Key:                 "fraud_investigation",
+		Name:                "Fraud Investigation",
+		Description:         "Open and manage fraud investigation case",
+		Category:            "fraud",
+		WorkflowType:        "FraudInvestigationJourney",
 		RequiredPermissions: []string{"fraud:investigate"},
 		UIEntryPoints:       []string{"Admin:FraudInvestigationPage"},
 		BFFEndpoints:        []string{"trpc.workflow.startFraudInvestigation"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "ml-service", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "fraud_prediction",
-		Name:         "ML Fraud Prediction",
-		Description:  "Run ML-based fraud prediction on beneficiaries",
-		Category:     "fraud",
-		WorkflowType: "FraudPredictionJourney",
+		Key:                 "fraud_prediction",
+		Name:                "ML Fraud Prediction",
+		Description:         "Run ML-based fraud prediction on beneficiaries",
+		Category:            "fraud",
+		WorkflowType:        "FraudPredictionJourney",
 		RequiredPermissions: []string{"fraud:predict"},
 		UIEntryPoints:       []string{"Admin:FraudAlertsPage"},
 		BFFEndpoints:        []string{"trpc.workflow.runFraudPrediction"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "ml-service", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "national_id_verification",
-		Name:         "National ID Verification",
-		Description:  "Verify identity via national ID federation",
-		Category:     "fraud",
-		WorkflowType: "NationalIDVerificationJourney",
+		Key:                 "national_id_verification",
+		Name:                "National ID Verification",
+		Description:         "Verify identity via national ID federation",
+		Category:            "fraud",
+		WorkflowType:        "NationalIDVerificationJourney",
 		RequiredPermissions: []string{"identity:verify"},
 		UIEntryPoints:       []string{"Mobile:VerifyIDScreen", "Admin:BeneficiaryDetailPage"},
 		BFFEndpoints:        []string{"trpc.worldClass.federation.verify"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "federation-service", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "cross_sector_interop",
-		Name:         "Cross-Sector Interoperability",
-		Description:  "Query, share, or verify data with other sectors",
-		Category:     "fraud",
-		WorkflowType: "CrossSectorInteropJourney",
+		Key:                 "cross_sector_interop",
+		Name:                "Cross-Sector Interoperability",
+		Description:         "Query, share, or verify data with other sectors",
+		Category:            "fraud",
+		WorkflowType:        "CrossSectorInteropJourney",
 		RequiredPermissions: []string{"interop:execute"},
 		UIEntryPoints:       []string{"Admin:InteroperabilityPage"},
 		BFFEndpoints:        []string{"trpc.worldClass.interop.execute"},

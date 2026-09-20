@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"social-protection-platform/orchestrator/clients"
+	"github.com/admin-portal/orchestrator/clients"
 )
 
 // DaprPaymentStateStore provides Dapr state store integration for payment state
@@ -90,12 +90,12 @@ func (s *DaprPaymentStateStore) GetPaymentState(ctx context.Context, intentID st
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payment state: %w", err)
 	}
-	if data == nil {
+	if data == nil || len(data.Value) == 0 {
 		return nil, nil
 	}
 
 	var state PaymentState
-	if err := json.Unmarshal(data, &state); err != nil {
+	if err := json.Unmarshal(data.Value, &state); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal payment state: %w", err)
 	}
 
@@ -190,12 +190,12 @@ func (s *DaprPaymentStateStore) GetCallbackCorrelation(ctx context.Context, call
 	if err != nil {
 		return nil, fmt.Errorf("failed to get callback correlation: %w", err)
 	}
-	if data == nil {
+	if data == nil || len(data.Value) == 0 {
 		return nil, nil
 	}
 
 	var correlation CallbackCorrelation
-	if err := json.Unmarshal(data, &correlation); err != nil {
+	if err := json.Unmarshal(data.Value, &correlation); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal callback correlation: %w", err)
 	}
 

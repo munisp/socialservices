@@ -2,8 +2,9 @@ import { getDb } from "../db";
 import { middlewareMetrics, middlewareAlerts, middlewareHealthChecks } from "../../drizzle/schema";
 import { desc, eq, and, gte } from "drizzle-orm";
 import { createClient, RedisClientType } from "redis";
+import { Kafka } from "kafkajs";
 
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const REDIS_URL = process.env.REDIS_URL;
 const APISIX_ADMIN_URL = process.env.APISIX_ADMIN_URL || "http://localhost:9180";
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || "http://localhost:8080";
 const PERMIFY_URL = process.env.PERMIFY_URL || "http://localhost:3476";
@@ -15,6 +16,7 @@ const KAFKA_BROKERS = process.env.KAFKA_BROKERS || "localhost:9092";
 let redisClient: RedisClientType | null = null;
 
 async function getRedisClient(): Promise<RedisClientType | null> {
+  if (!REDIS_URL) return null;
   if (!redisClient) {
     try {
       redisClient = createClient({ url: REDIS_URL });
@@ -41,9 +43,9 @@ async function redisHealthCheck(): Promise<boolean> {
 
 async function apisixHealthCheck(): Promise<boolean> {
   try {
-    const apiKey = process.env.APISIX_API_KEY;
+    const apiKey = process.env.APISIX_ADMIN_KEY;
     if (!apiKey) {
-      console.warn("[Monitoring] APISIX_API_KEY not configured, skipping health check");
+      console.warn("[Monitoring] APISIX_ADMIN_KEY not configured, health check unavailable");
       return false;
     }
     const response = await fetch(`${APISIX_ADMIN_URL}/apisix/admin/routes`, {
@@ -126,12 +128,11 @@ async function fluvioHealthCheck(): Promise<boolean> {
 async function kafkaHealthCheck(): Promise<boolean> {
   try {
     const brokers = KAFKA_BROKERS.split(",");
-    const [host, port] = brokers[0].split(":");
-    const response = await fetch(`http://${host}:${port}`, {
-      method: "GET",
-      signal: AbortSignal.timeout(2000),
-    }).catch(() => null);
-    return response !== null;
+    const admin = new Kafka({ clientId: "middleware-health", brokers, connectionTimeout: 3000 }).admin();
+    await admin.connect();
+    await admin.listTopics();
+    await admin.disconnect();
+    return true;
   } catch (error) {
     console.error("[Monitoring] Kafka health check failed:", error);
     return false;

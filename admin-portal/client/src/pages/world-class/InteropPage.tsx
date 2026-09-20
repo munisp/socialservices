@@ -9,9 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export default function InteropPage() {
   const [beneficiaryId, setBeneficiaryId] = useState("");
   const [selectedBeneficiary, setSelectedBeneficiary] = useState<string | null>(null);
+  const [nationalId, setNationalId] = useState("");
 
   const handleSelect = () => {
-    if (beneficiaryId) {
+    if (beneficiaryId && nationalId) {
       setSelectedBeneficiary(beneficiaryId);
     }
   };
@@ -41,6 +42,7 @@ export default function InteropPage() {
                 onChange={(e) => setBeneficiaryId(e.target.value)}
                 className="max-w-sm"
               />
+              <Input placeholder="Enter national ID..." value={nationalId} onChange={(e) => setNationalId(e.target.value)} className="max-w-sm" />
               <Button onClick={handleSelect}>Select</Button>
             </div>
           </CardContent>
@@ -53,7 +55,7 @@ export default function InteropPage() {
               <TabsTrigger value="consents">Consent Management</TabsTrigger>
             </TabsList>
             <TabsContent value="profile">
-              <CrossSectorProfileView beneficiaryId={selectedBeneficiary} />
+              <CrossSectorProfileView beneficiaryId={selectedBeneficiary} nationalId={nationalId} />
             </TabsContent>
             <TabsContent value="consents">
               <ConsentManagement beneficiaryId={selectedBeneficiary} />

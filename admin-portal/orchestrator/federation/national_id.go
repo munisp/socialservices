@@ -1,6 +1,7 @@
 package federation
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -25,29 +26,29 @@ import (
 type IdentityProvider string
 
 const (
-	ProviderAadhaar    IdentityProvider = "aadhaar"      // India
-	ProviderNIN        IdentityProvider = "nin"          // Nigeria
-	ProviderNIDA       IdentityProvider = "nida"         // Tanzania
-	ProviderNPR        IdentityProvider = "npr"          // Nepal
-	ProviderNadra      IdentityProvider = "nadra"        // Pakistan
-	ProviderDukcapil   IdentityProvider = "dukcapil"     // Indonesia
-	ProviderCPF        IdentityProvider = "cpf"          // Brazil
-	ProviderRUT        IdentityProvider = "rut"          // Chile
-	ProviderCURP       IdentityProvider = "curp"         // Mexico
-	ProviderSSN        IdentityProvider = "ssn"          // USA
-	ProviderNHIF       IdentityProvider = "nhif"         // Kenya
-	ProviderCustom     IdentityProvider = "custom"       // Custom provider
+	ProviderAadhaar  IdentityProvider = "aadhaar"  // India
+	ProviderNIN      IdentityProvider = "nin"      // Nigeria
+	ProviderNIDA     IdentityProvider = "nida"     // Tanzania
+	ProviderNPR      IdentityProvider = "npr"      // Nepal
+	ProviderNadra    IdentityProvider = "nadra"    // Pakistan
+	ProviderDukcapil IdentityProvider = "dukcapil" // Indonesia
+	ProviderCPF      IdentityProvider = "cpf"      // Brazil
+	ProviderRUT      IdentityProvider = "rut"      // Chile
+	ProviderCURP     IdentityProvider = "curp"     // Mexico
+	ProviderSSN      IdentityProvider = "ssn"      // USA
+	ProviderNHIF     IdentityProvider = "nhif"     // Kenya
+	ProviderCustom   IdentityProvider = "custom"   // Custom provider
 )
 
 // VerificationStatus represents the status of identity verification
 type VerificationStatus string
 
 const (
-	VerificationPending   VerificationStatus = "pending"
-	VerificationVerified  VerificationStatus = "verified"
-	VerificationFailed    VerificationStatus = "failed"
-	VerificationExpired   VerificationStatus = "expired"
-	VerificationRevoked   VerificationStatus = "revoked"
+	VerificationPending  VerificationStatus = "pending"
+	VerificationVerified VerificationStatus = "verified"
+	VerificationFailed   VerificationStatus = "failed"
+	VerificationExpired  VerificationStatus = "expired"
+	VerificationRevoked  VerificationStatus = "revoked"
 )
 
 // IdentityRecord represents a federated identity record
@@ -70,18 +71,18 @@ type IdentityRecord struct {
 
 // VerificationRequest represents a request to verify identity
 type VerificationRequest struct {
-	BeneficiaryID   string           `json:"beneficiaryId"`
-	Provider        IdentityProvider `json:"provider"`
-	NationalID      string           `json:"nationalId"`
-	FirstName       string           `json:"firstName,omitempty"`
-	LastName        string           `json:"lastName,omitempty"`
-	DateOfBirth     string           `json:"dateOfBirth,omitempty"`
-	Gender          string           `json:"gender,omitempty"`
-	BiometricData   []byte           `json:"biometricData,omitempty"`
-	BiometricType   string           `json:"biometricType,omitempty"` // fingerprint, face, iris
-	ConsentToken    string           `json:"consentToken"`
-	RequestedBy     int64            `json:"requestedBy"`
-	Purpose         string           `json:"purpose"`
+	BeneficiaryID string           `json:"beneficiaryId"`
+	Provider      IdentityProvider `json:"provider"`
+	NationalID    string           `json:"nationalId"`
+	FirstName     string           `json:"firstName,omitempty"`
+	LastName      string           `json:"lastName,omitempty"`
+	DateOfBirth   string           `json:"dateOfBirth,omitempty"`
+	Gender        string           `json:"gender,omitempty"`
+	BiometricData []byte           `json:"biometricData,omitempty"`
+	BiometricType string           `json:"biometricType,omitempty"` // fingerprint, face, iris
+	ConsentToken  string           `json:"consentToken"`
+	RequestedBy   int64            `json:"requestedBy"`
+	Purpose       string           `json:"purpose"`
 }
 
 // VerificationResponse represents the response from identity verification
@@ -104,36 +105,36 @@ type VerificationResponse struct {
 
 // ProviderConfig represents configuration for an identity provider
 type ProviderConfig struct {
-	Provider         IdentityProvider `json:"provider"`
-	Name             string           `json:"name"`
-	BaseURL          string           `json:"baseUrl"`
-	AuthURL          string           `json:"authUrl"`
-	VerifyURL        string           `json:"verifyUrl"`
-	BiometricURL     string           `json:"biometricUrl,omitempty"`
-	ClientID         string           `json:"clientId"`
-	ClientSecret     string           `json:"clientSecret"`
-	APIKey           string           `json:"apiKey,omitempty"`
-	CertPath         string           `json:"certPath,omitempty"`
-	KeyPath          string           `json:"keyPath,omitempty"`
-	CAPath           string           `json:"caPath,omitempty"`
-	Timeout          time.Duration    `json:"timeout"`
-	RateLimit        int              `json:"rateLimit"` // requests per minute
-	RetryAttempts    int              `json:"retryAttempts"`
-	Enabled          bool             `json:"enabled"`
-	SupportsBiometric bool            `json:"supportsBiometric"`
+	Provider          IdentityProvider `json:"provider"`
+	Name              string           `json:"name"`
+	BaseURL           string           `json:"baseUrl"`
+	AuthURL           string           `json:"authUrl"`
+	VerifyURL         string           `json:"verifyUrl"`
+	BiometricURL      string           `json:"biometricUrl,omitempty"`
+	ClientID          string           `json:"clientId"`
+	ClientSecret      string           `json:"clientSecret"`
+	APIKey            string           `json:"apiKey,omitempty"`
+	CertPath          string           `json:"certPath,omitempty"`
+	KeyPath           string           `json:"keyPath,omitempty"`
+	CAPath            string           `json:"caPath,omitempty"`
+	Timeout           time.Duration    `json:"timeout"`
+	RateLimit         int              `json:"rateLimit"` // requests per minute
+	RetryAttempts     int              `json:"retryAttempts"`
+	Enabled           bool             `json:"enabled"`
+	SupportsBiometric bool             `json:"supportsBiometric"`
 }
 
 // X-Road style message format
 type XRoadRequest struct {
-	XMLName     xml.Name `xml:"request"`
-	ServiceCode string   `xml:"serviceCode"`
-	ServiceVersion string `xml:"serviceVersion"`
-	ClientID    string   `xml:"client>id"`
-	ClientName  string   `xml:"client>name"`
-	RequestID   string   `xml:"id"`
-	Timestamp   string   `xml:"timestamp"`
-	Body        string   `xml:"body"`
-	Signature   string   `xml:"signature,omitempty"`
+	XMLName        xml.Name `xml:"request"`
+	ServiceCode    string   `xml:"serviceCode"`
+	ServiceVersion string   `xml:"serviceVersion"`
+	ClientID       string   `xml:"client>id"`
+	ClientName     string   `xml:"client>name"`
+	RequestID      string   `xml:"id"`
+	Timestamp      string   `xml:"timestamp"`
+	Body           string   `xml:"body"`
+	Signature      string   `xml:"signature,omitempty"`
 }
 
 type XRoadResponse struct {
@@ -147,12 +148,12 @@ type XRoadResponse struct {
 
 // NationalIDFederationService manages federated identity verification
 type NationalIDFederationService struct {
-	db           *sql.DB
-	providers    map[IdentityProvider]*ProviderConfig
-	httpClients  map[IdentityProvider]*http.Client
-	mu           sync.RWMutex
-	hmacKey      []byte
-	instanceID   string
+	db          *sql.DB
+	providers   map[IdentityProvider]*ProviderConfig
+	httpClients map[IdentityProvider]*http.Client
+	mu          sync.RWMutex
+	hmacKey     []byte
+	instanceID  string
 }
 
 // NewNationalIDFederationService creates a new federation service
@@ -291,8 +292,8 @@ func (s *NationalIDFederationService) verifyAadhaar(ctx context.Context, config 
 	// Add demographic data if provided
 	if req.FirstName != "" || req.LastName != "" || req.DateOfBirth != "" {
 		authRequest["demo"] = map[string]interface{}{
-			"name": fmt.Sprintf("%s %s", req.FirstName, req.LastName),
-			"dob":  req.DateOfBirth,
+			"name":   fmt.Sprintf("%s %s", req.FirstName, req.LastName),
+			"dob":    req.DateOfBirth,
 			"gender": req.Gender,
 		}
 	}
@@ -342,10 +343,10 @@ func (s *NationalIDFederationService) verifyNIN(ctx context.Context, config *Pro
 func (s *NationalIDFederationService) verifyCPF(ctx context.Context, config *ProviderConfig, req *VerificationRequest, requestID string) (*VerificationResponse, error) {
 	// Build CPF verification request
 	cpfRequest := map[string]interface{}{
-		"cpf":          req.NationalID,
-		"nome":         fmt.Sprintf("%s %s", req.FirstName, req.LastName),
+		"cpf":            req.NationalID,
+		"nome":           fmt.Sprintf("%s %s", req.FirstName, req.LastName),
 		"dataNascimento": req.DateOfBirth,
-		"idRequisicao": requestID,
+		"idRequisicao":   requestID,
 	}
 
 	response, err := s.sendProviderRequest(ctx, config, cpfRequest)
@@ -404,7 +405,7 @@ func (s *NationalIDFederationService) sendProviderRequest(ctx context.Context, c
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", config.VerifyURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", config.VerifyURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -413,27 +414,22 @@ func (s *NationalIDFederationService) sendProviderRequest(ctx context.Context, c
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", config.APIKey))
 	req.Header.Set("X-Client-ID", config.ClientID)
 
-	// In production, this would actually send the request
-	// For now, we simulate a successful response
-	_ = jsonData
-
-	// Simulate response based on provider
-	return s.simulateProviderResponse(config.Provider, requestData)
-}
-
-// simulateProviderResponse simulates a provider response for testing
-// In production, this would be replaced with actual API calls
-func (s *NationalIDFederationService) simulateProviderResponse(provider IdentityProvider, request map[string]interface{}) ([]byte, error) {
-	// This is a placeholder that would be replaced with actual API integration
-	// The structure shows what the real response would look like
-	response := map[string]interface{}{
-		"status":           "verified",
-		"matchScore":       0.95,
-		"demographicMatch": 0.98,
-		"biometricMatch":   0.92,
-		"timestamp":        time.Now().Format(time.RFC3339),
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("identity provider request failed: %w", err)
 	}
-	return json.Marshal(response)
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
+	if err != nil {
+		return nil, fmt.Errorf("identity provider response read failed: %w", err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("identity provider returned %d: %s", response.StatusCode, string(body))
+	}
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("identity provider returned invalid JSON")
+	}
+	return body, nil
 }
 
 // sendXRoadRequest sends an X-Road style request
@@ -451,7 +447,7 @@ func (s *NationalIDFederationService) sendXRoadRequest(ctx context.Context, conf
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", config.VerifyURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", config.VerifyURL, bytes.NewReader(xmlData))
 	if err != nil {
 		return nil, err
 	}
@@ -459,16 +455,26 @@ func (s *NationalIDFederationService) sendXRoadRequest(ctx context.Context, conf
 	req.Header.Set("Content-Type", "application/xml")
 	req.Header.Set("X-Road-Client", config.ClientID)
 
-	// In production, this would send the actual request
-	_ = xmlData
-
-	// Return simulated response
-	return &XRoadResponse{
-		RequestID:    xroadReq.RequestID,
-		ResponseCode: "OK",
-		Timestamp:    time.Now().Format(time.RFC3339),
-		Body:         base64.StdEncoding.EncodeToString([]byte(`{"status":"verified","matchScore":0.95}`)),
-	}, nil
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("X-Road request failed: %w", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 2<<20))
+	if err != nil {
+		return nil, fmt.Errorf("X-Road response read failed: %w", err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("X-Road returned %d: %s", response.StatusCode, string(body))
+	}
+	var parsed XRoadResponse
+	if err := xml.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("invalid X-Road response: %w", err)
+	}
+	if parsed.RequestID != xroadReq.RequestID {
+		return nil, fmt.Errorf("X-Road response request ID mismatch")
+	}
+	return &parsed, nil
 }
 
 // signRequest signs an X-Road request

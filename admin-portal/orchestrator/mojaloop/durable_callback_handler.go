@@ -2,8 +2,13 @@ package mojaloop
 
 import (
 	"context"
+	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,16 +17,16 @@ import (
 	"sync"
 	"time"
 
-	"social-protection-platform/orchestrator/repository"
+	"github.com/admin-portal/orchestrator/repository"
 )
 
 // DurableCallbackHandler handles async callbacks from Mojaloop with PostgreSQL-backed correlation
 // This handler survives restarts and works across multiple replicas
 type DurableCallbackHandler struct {
-	fspiop      *FSPIOPClient
-	paymentRepo *repository.PaymentRepository
-	handlers    map[string]CallbackFunc
-	mu          sync.RWMutex
+	fspiop       *FSPIOPClient
+	paymentRepo  *repository.PaymentRepository
+	handlers     map[string]CallbackFunc
+	mu           sync.RWMutex
 	pollInterval time.Duration
 }
 
@@ -100,9 +105,8 @@ func (h *DurableCallbackHandler) verifyJWSSignature(r *http.Request) bool {
 	// Check for FSPIOP-Signature header
 	signature := r.Header.Get("FSPIOP-Signature")
 	if signature == "" {
-		// Check environment - in development, allow unsigned requests
-		if os.Getenv("MOJALOOP_ENV") != "production" {
-			log.Printf("Warning: No FSPIOP-Signature header present (allowed in non-production)")
+		if os.Getenv("MOJALOOP_ENV") != "production" && os.Getenv("MOJALOOP_ALLOW_UNSIGNED") == "true" {
+			log.Printf("Warning: unsigned Mojaloop callback accepted by explicit non-production override")
 			return true
 		}
 		log.Printf("Error: No FSPIOP-Signature header present in production")
@@ -145,8 +149,7 @@ func (h *DurableCallbackHandler) verifyJWSSignature(r *http.Request) bool {
 		return false
 	}
 
-	// Get the public key for the source DFSP from environment or key store
-	// In production, this would fetch from a key management service
+	// Get the pinned public key for the source DFSP from the deployment secret store.
 	publicKeyPEM := os.Getenv(fmt.Sprintf("DFSP_PUBLIC_KEY_%s", strings.ToUpper(sourceDFSP)))
 	if publicKeyPEM == "" {
 		// Fallback to default hub key
@@ -163,9 +166,37 @@ func (h *DurableCallbackHandler) verifyJWSSignature(r *http.Request) bool {
 		return false
 	}
 
-	// Signature is present and properly formatted
-	// In a full implementation, we would verify the signature here using crypto/rsa
-	// For now, we validate the structure and log success
+	block, _ := pem.Decode([]byte(publicKeyPEM))
+	if block == nil {
+		log.Printf("Error: Invalid PEM public key for DFSP %s", sourceDFSP)
+		return false
+	}
+	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		if pkcs1, pkcs1Err := x509.ParsePKCS1PublicKey(block.Bytes); pkcs1Err == nil {
+			parsed = pkcs1
+		} else if certificate, certificateErr := x509.ParseCertificate(block.Bytes); certificateErr == nil {
+			parsed = certificate.PublicKey
+		} else {
+			log.Printf("Error: Failed to parse DFSP public key: %v", err)
+			return false
+		}
+	}
+	publicKey, ok := parsed.(*rsa.PublicKey)
+	if !ok {
+		log.Printf("Error: DFSP key is not RSA")
+		return false
+	}
+	signatureBytes, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		log.Printf("Error: Failed to decode JWS signature: %v", err)
+		return false
+	}
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	if err := rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, digest[:], signatureBytes); err != nil {
+		log.Printf("Error: Invalid JWS signature for DFSP %s: %v", sourceDFSP, err)
+		return false
+	}
 	log.Printf("JWS signature verified for DFSP %s with algorithm %s", sourceDFSP, jwsHeader.Alg)
 	return true
 }

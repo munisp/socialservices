@@ -105,7 +105,7 @@ export default function TransactionSimulator() {
                   <SelectValue placeholder="Select beneficiary" />
                 </SelectTrigger>
                 <SelectContent>
-                  {beneficiaries?.map((b) => (
+                  {beneficiaries?.results.map((b) => (
                     <SelectItem key={b.id} value={b.id.toString()}>
                       {b.firstName} {b.lastName} ({b.nationalId})
                     </SelectItem>

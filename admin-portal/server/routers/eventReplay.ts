@@ -1,4 +1,5 @@
-import { router, protectedProcedure } from "../_core/trpc";
+import { router, protectedProcedure, adminProcedure } from "../_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   createEventSnapshot,
@@ -12,15 +13,15 @@ import {
 
 export const eventReplayRouter = router({
   // Create snapshot
-  createSnapshot: protectedProcedure
+  createSnapshot: adminProcedure
     .input(
       z.object({
         snapshotName: z.string(),
         description: z.string().optional(),
-        topics: z.array(z.string()),
-        startOffset: z.string(),
-        endOffset: z.string(),
-        eventCount: z.number(),
+        topics: z.array(z.string().min(1)).min(1),
+        startOffset: z.string().regex(/^\d+$/),
+        endOffset: z.string().regex(/^\d+$/),
+        eventCount: z.number().int().nonnegative(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -42,14 +43,14 @@ export const eventReplayRouter = router({
   }),
 
   // Start replay
-  startReplay: protectedProcedure
+  startReplay: adminProcedure
     .input(
       z.object({
         replayName: z.string(),
-        topics: z.array(z.string()),
+        topics: z.array(z.string().min(1)).min(1),
         snapshotId: z.number().optional(),
-        startOffset: z.string().optional(),
-        endOffset: z.string().optional(),
+        startOffset: z.string().regex(/^\d+$/).optional(),
+        endOffset: z.string().regex(/^\d+$/),
         eventFilter: z.any().optional(),
       })
     )
@@ -60,6 +61,7 @@ export const eventReplayRouter = router({
         endOffset: input.endOffset,
         eventFilter: input.eventFilter,
       });
+      if (!replayId) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Replay could not be started; verify Kafka connectivity and the bounded offset range" });
       return { replayId };
     }),
 
@@ -76,7 +78,7 @@ export const eventReplayRouter = router({
   }),
 
   // Cancel replay
-  cancelReplay: protectedProcedure
+  cancelReplay: adminProcedure
     .input(z.object({ replayId: z.number() }))
     .mutation(async ({ input }) => {
       await cancelReplay(input.replayId);

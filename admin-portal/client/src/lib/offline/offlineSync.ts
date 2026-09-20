@@ -122,6 +122,10 @@ export interface SyncResult {
   errors: string[];
 }
 
+function asRecord(value: object): Record<string, unknown> {
+  return { ...value } as Record<string, unknown>;
+}
+
 class OfflineSyncManager {
   private db: IDBPDatabase<OfflineDB> | null = null;
   private syncInProgress = false;
@@ -254,7 +258,7 @@ class OfflineSyncManager {
     };
 
     await this.db.put('beneficiaries', record);
-    await this.addToSyncQueue('beneficiary', beneficiary.id, 'update', record);
+    await this.addToSyncQueue('beneficiary', beneficiary.id, 'update', asRecord(record));
     this.emit('beneficiaryUpdated', record);
   }
 
@@ -284,7 +288,7 @@ class OfflineSyncManager {
     
     const beneficiary = await this.getBeneficiary(id);
     if (beneficiary) {
-      await this.addToSyncQueue('beneficiary', id, 'delete', beneficiary);
+      await this.addToSyncQueue('beneficiary', id, 'delete', asRecord(beneficiary));
       await this.db.delete('beneficiaries', id);
       this.emit('beneficiaryDeleted', { id });
     }
@@ -301,7 +305,7 @@ class OfflineSyncManager {
     };
 
     await this.db.put('households', record);
-    await this.addToSyncQueue('household', household.id, 'update', record);
+    await this.addToSyncQueue('household', household.id, 'update', asRecord(record));
     this.emit('householdUpdated', record);
   }
 
@@ -391,9 +395,9 @@ class OfflineSyncManager {
 
     // Update the entity with resolved data
     if (conflict.entityType === 'beneficiary') {
-      await this.db.put('beneficiaries', finalData as BeneficiaryRecord);
+      await this.db.put('beneficiaries', finalData as unknown as BeneficiaryRecord);
     } else if (conflict.entityType === 'household') {
-      await this.db.put('households', finalData as HouseholdRecord);
+      await this.db.put('households', finalData as unknown as HouseholdRecord);
     }
 
     // Add to sync queue to push resolution to server
@@ -452,7 +456,7 @@ class OfflineSyncManager {
       // Pull server changes
       await this.pullServerChanges();
 
-      await this.logSync('sync_completed', result);
+      await this.logSync('sync_completed', asRecord(result));
       this.emit('syncCompleted', result);
     } catch (error) {
       result.success = false;

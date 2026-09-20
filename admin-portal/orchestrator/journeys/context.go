@@ -11,34 +11,34 @@ import (
 // This enables consistent middleware integration (Kafka events, Redis idempotency, Permify authz, audit logging)
 type JourneyContext struct {
 	// Core identifiers
-	JourneyRunID    string    `json:"journeyRunId"`
-	JourneyType     string    `json:"journeyType"`
-	CorrelationID   string    `json:"correlationId"`
-	IdempotencyKey  string    `json:"idempotencyKey"`
-	
+	JourneyRunID   string `json:"journeyRunId"`
+	JourneyType    string `json:"journeyType"`
+	CorrelationID  string `json:"correlationId"`
+	IdempotencyKey string `json:"idempotencyKey"`
+
 	// Tenant and actor information
-	TenantID        string    `json:"tenantId"`
-	ActorID         string    `json:"actorId"`
-	ActorType       string    `json:"actorType"` // "admin", "field_officer", "beneficiary", "system"
-	ActorRoles      []string  `json:"actorRoles"`
-	ActorClaims     map[string]interface{} `json:"actorClaims"`
-	
+	TenantID    string                 `json:"tenantId"`
+	ActorID     string                 `json:"actorId"`
+	ActorType   string                 `json:"actorType"` // "admin", "field_officer", "beneficiary", "system"
+	ActorRoles  []string               `json:"actorRoles"`
+	ActorClaims map[string]interface{} `json:"actorClaims"`
+
 	// Request metadata
-	Source          string    `json:"source"` // "web", "mobile", "api", "scheduled"
-	DeviceID        string    `json:"deviceId,omitempty"`
-	IPAddress       string    `json:"ipAddress,omitempty"`
-	UserAgent       string    `json:"userAgent,omitempty"`
-	
+	Source    string `json:"source"` // "web", "mobile", "api", "scheduled"
+	DeviceID  string `json:"deviceId,omitempty"`
+	IPAddress string `json:"ipAddress,omitempty"`
+	UserAgent string `json:"userAgent,omitempty"`
+
 	// Timing
-	StartedAt       time.Time `json:"startedAt"`
-	Timeout         time.Duration `json:"timeout"`
-	
+	StartedAt time.Time     `json:"startedAt"`
+	Timeout   time.Duration `json:"timeout"`
+
 	// Feature flags and configuration
-	FeatureFlags    map[string]bool `json:"featureFlags,omitempty"`
-	
+	FeatureFlags map[string]bool `json:"featureFlags,omitempty"`
+
 	// Audit trail
-	AuditEnabled    bool      `json:"auditEnabled"`
-	AuditLevel      string    `json:"auditLevel"` // "minimal", "standard", "detailed"
+	AuditEnabled bool   `json:"auditEnabled"`
+	AuditLevel   string `json:"auditLevel"` // "minimal", "standard", "detailed"
 }
 
 // NewJourneyContext creates a new journey context with generated IDs
@@ -222,15 +222,15 @@ type JourneyStartRequest struct {
 
 // JourneyStatusResponse represents the status of a running journey
 type JourneyStatusResponse struct {
-	JourneyRunID   string                 `json:"journeyRunId"`
-	JourneyType    string                 `json:"journeyType"`
-	Status         string                 `json:"status"`
-	CurrentStep    string                 `json:"currentStep,omitempty"`
-	Progress       float64                `json:"progress"`
-	StartedAt      time.Time              `json:"startedAt"`
-	LastUpdatedAt  time.Time              `json:"lastUpdatedAt"`
-	Output         map[string]interface{} `json:"output,omitempty"`
-	Error          string                 `json:"error,omitempty"`
+	JourneyRunID  string                 `json:"journeyRunId"`
+	JourneyType   string                 `json:"journeyType"`
+	Status        string                 `json:"status"`
+	CurrentStep   string                 `json:"currentStep,omitempty"`
+	Progress      float64                `json:"progress"`
+	StartedAt     time.Time              `json:"startedAt"`
+	LastUpdatedAt time.Time              `json:"lastUpdatedAt"`
+	Output        map[string]interface{} `json:"output,omitempty"`
+	Error         string                 `json:"error,omitempty"`
 }
 
 // Helper function to generate unique IDs

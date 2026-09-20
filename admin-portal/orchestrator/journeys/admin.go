@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -28,22 +29,22 @@ type ApprovalDelegationInput struct {
 }
 
 type ApprovalDelegationResult struct {
-	JourneyRunID  string    `json:"journeyRunId"`
-	DelegationID  string    `json:"delegationId"`
-	DelegatorID   string    `json:"delegatorId"`
-	DelegateID    string    `json:"delegateId"`
-	StartDate     time.Time `json:"startDate"`
-	EndDate       time.Time `json:"endDate"`
-	CreatedAt     time.Time `json:"createdAt"`
+	JourneyRunID string    `json:"journeyRunId"`
+	DelegationID string    `json:"delegationId"`
+	DelegatorID  string    `json:"delegatorId"`
+	DelegateID   string    `json:"delegateId"`
+	StartDate    time.Time `json:"startDate"`
+	EndDate      time.Time `json:"endDate"`
+	CreatedAt    time.Time `json:"createdAt"`
 }
 
 // ApprovalDelegationJourney orchestrates approval delegation
 func ApprovalDelegationJourney(ctx workflow.Context, input ApprovalDelegationInput) (*ApprovalDelegationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -51,21 +52,21 @@ func ApprovalDelegationJourney(ctx workflow.Context, input ApprovalDelegationInp
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType": "approval_delegation",
 		"delegatorId": input.DelegatorID,
 		"delegateId":  input.DelegateID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "approval:delegate").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Verify delegator can delegate (must be the actor or admin)
 	if jc.ActorID != input.DelegatorID {
 		var isAdmin bool
@@ -74,24 +75,24 @@ func ApprovalDelegationJourney(ctx workflow.Context, input ApprovalDelegationInp
 			return nil, fmt.Errorf("cannot delegate for another user")
 		}
 	}
-	
+
 	// Step 4: Verify delegate exists and is active
 	var delegateActive bool
 	err = workflow.ExecuteActivity(ctx, CheckUserActiveActivity, input.DelegateID).Get(ctx, &delegateActive)
 	if err != nil || !delegateActive {
 		return nil, fmt.Errorf("delegate user not found or inactive")
 	}
-	
+
 	// Step 5: Check for conflicting delegations
 	var hasConflict bool
 	err = workflow.ExecuteActivity(ctx, CheckDelegationConflictActivity, input.DelegatorID, input.StartDate, input.EndDate).Get(ctx, &hasConflict)
 	if hasConflict {
 		return nil, fmt.Errorf("conflicting delegation exists for this period")
 	}
-	
+
 	startDate, _ := time.Parse("2006-01-02", input.StartDate)
 	endDate, _ := time.Parse("2006-01-02", input.EndDate)
-	
+
 	// Step 6: Create delegation record
 	var delegationID string
 	err = workflow.ExecuteActivity(ctx, CreateDelegationRecordActivity, map[string]interface{}{
@@ -108,13 +109,13 @@ func ApprovalDelegationJourney(ctx workflow.Context, input ApprovalDelegationInp
 	if err != nil {
 		return nil, fmt.Errorf("failed to create delegation: %v", err)
 	}
-	
+
 	// Step 7: Update Permify with delegation permissions
 	workflow.ExecuteActivity(ctx, GrantDelegationPermissionsActivity, input.DelegateID, input.DelegatorID, input.ApprovalTypes)
-	
+
 	// Step 8: Notify delegate
 	workflow.ExecuteActivity(ctx, SendDelegationNotificationActivity, input.DelegateID, input.DelegatorID, input.ApprovalTypes, startDate, endDate)
-	
+
 	// Step 9: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "approval.delegation_created", map[string]interface{}{
 		"delegationId":  delegationID,
@@ -123,7 +124,7 @@ func ApprovalDelegationJourney(ctx workflow.Context, input ApprovalDelegationInp
 		"approvalTypes": input.ApprovalTypes,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 10: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "delegation_created",
@@ -141,12 +142,12 @@ func ApprovalDelegationJourney(ctx workflow.Context, input ApprovalDelegationInp
 			"reason":        input.Reason,
 		},
 	})
-	
+
 	// Step 11: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"delegationId": delegationID,
 	})
-	
+
 	return &ApprovalDelegationResult{
 		JourneyRunID: jc.JourneyRunID,
 		DelegationID: delegationID,
@@ -171,21 +172,21 @@ type BreakGlassAccessInput struct {
 }
 
 type BreakGlassAccessResult struct {
-	JourneyRunID  string    `json:"journeyRunId"`
-	AccessID      string    `json:"accessId"`
-	ResourceType  string    `json:"resourceType"`
-	ResourceID    string    `json:"resourceId"`
-	ExpiresAt     time.Time `json:"expiresAt"`
-	GrantedAt     time.Time `json:"grantedAt"`
+	JourneyRunID string    `json:"journeyRunId"`
+	AccessID     string    `json:"accessId"`
+	ResourceType string    `json:"resourceType"`
+	ResourceID   string    `json:"resourceId"`
+	ExpiresAt    time.Time `json:"expiresAt"`
+	GrantedAt    time.Time `json:"grantedAt"`
 }
 
 // BreakGlassAccessJourney orchestrates emergency break-glass access
 func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) (*BreakGlassAccessResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -193,7 +194,7 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event (high priority alert)
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":  "break_glass_access",
@@ -201,19 +202,19 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 		"resourceId":   input.ResourceID,
 		"priority":     "critical",
 	})
-	
+
 	// Step 2: Check authorization (must have break-glass permission)
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "system:break_glass").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("break-glass access denied")
 	}
-	
+
 	// Step 3: Validate justification (must be non-empty and meaningful)
 	if len(input.Justification) < 20 {
 		return nil, fmt.Errorf("justification must be at least 20 characters")
 	}
-	
+
 	// Step 4: Limit duration (max 60 minutes)
 	duration := input.Duration
 	if duration > 60 {
@@ -222,9 +223,9 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 	if duration < 5 {
 		duration = 5
 	}
-	
+
 	expiresAt := time.Now().Add(time.Duration(duration) * time.Minute)
-	
+
 	// Step 5: Create break-glass access record
 	var accessID string
 	err = workflow.ExecuteActivity(ctx, CreateBreakGlassRecordActivity, map[string]interface{}{
@@ -241,10 +242,10 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create break-glass record: %v", err)
 	}
-	
+
 	// Step 6: Grant temporary Permify permissions
 	workflow.ExecuteActivity(ctx, GrantTemporaryPermissionsActivity, jc.ActorID, input.ResourceType, input.ResourceID, expiresAt)
-	
+
 	// Step 7: Send immediate alerts to security team
 	workflow.ExecuteActivity(ctx, SendBreakGlassAlertActivity, map[string]interface{}{
 		"accessId":      accessID,
@@ -254,7 +255,7 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 		"justification": input.Justification,
 		"expiresAt":     expiresAt,
 	})
-	
+
 	// Step 8: Publish Kafka event (high priority)
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "security.break_glass_access", map[string]interface{}{
 		"accessId":      accessID,
@@ -266,7 +267,7 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 		"correlationId": jc.CorrelationID,
 		"priority":      "critical",
 	})
-	
+
 	// Step 9: Create audit log (detailed)
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "break_glass_access",
@@ -285,27 +286,27 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 			"userAgent":     jc.UserAgent,
 		},
 	})
-	
+
 	// Step 10: Write to lakehouse (security events)
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "security_events", map[string]interface{}{
-		"eventType":     "break_glass_access",
-		"accessId":      accessID,
-		"actorId":       jc.ActorID,
-		"resourceType":  input.ResourceType,
-		"resourceId":    input.ResourceID,
-		"eventDate":     time.Now().Format("2006-01-02"),
-		"tenantId":      jc.TenantID,
+		"eventType":    "break_glass_access",
+		"accessId":     accessID,
+		"actorId":      jc.ActorID,
+		"resourceType": input.ResourceType,
+		"resourceId":   input.ResourceID,
+		"eventDate":    time.Now().Format("2006-01-02"),
+		"tenantId":     jc.TenantID,
 	})
-	
+
 	// Step 11: Schedule access revocation
 	workflow.ExecuteActivity(ctx, ScheduleAccessRevocationActivity, accessID, expiresAt)
-	
+
 	// Step 12: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"accessId":  accessID,
 		"expiresAt": expiresAt,
 	})
-	
+
 	return &BreakGlassAccessResult{
 		JourneyRunID: jc.JourneyRunID,
 		AccessID:     accessID,
@@ -321,12 +322,12 @@ func BreakGlassAccessJourney(ctx workflow.Context, input BreakGlassAccessInput) 
 // BFF: trpc.workflow.bulkOperation
 // Workflow: BulkOperationWorkflow
 type BulkOperationInput struct {
-	JourneyContext *JourneyContext `json:"journeyContext"`
-	OperationType  string          `json:"operationType"` // "suspend", "reactivate", "enroll", "disenroll", "update"
-	EntityType     string          `json:"entityType"`    // "beneficiary", "household"
-	EntityIDs      []string        `json:"entityIds"`
+	JourneyContext *JourneyContext        `json:"journeyContext"`
+	OperationType  string                 `json:"operationType"` // "suspend", "reactivate", "enroll", "disenroll", "update"
+	EntityType     string                 `json:"entityType"`    // "beneficiary", "household"
+	EntityIDs      []string               `json:"entityIds"`
 	Parameters     map[string]interface{} `json:"parameters,omitempty"`
-	Reason         string          `json:"reason"`
+	Reason         string                 `json:"reason"`
 }
 
 type BulkOperationResult struct {
@@ -343,10 +344,10 @@ type BulkOperationResult struct {
 // BulkOperationJourney orchestrates bulk operations on entities
 func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*BulkOperationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -354,7 +355,7 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":   "bulk_operation",
@@ -362,7 +363,7 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 		"entityType":    input.EntityType,
 		"entityCount":   len(input.EntityIDs),
 	})
-	
+
 	// Step 2: Check authorization
 	permission := fmt.Sprintf("%s:bulk_%s", input.EntityType, input.OperationType)
 	var authorized bool
@@ -370,12 +371,12 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed for %s", permission)
 	}
-	
+
 	// Step 3: Validate entity count (max 10000)
 	if len(input.EntityIDs) > 10000 {
 		return nil, fmt.Errorf("bulk operation limited to 10000 entities")
 	}
-	
+
 	// Step 4: Create operation record
 	var operationID string
 	err = workflow.ExecuteActivity(ctx, CreateBulkOperationRecordActivity, map[string]interface{}{
@@ -391,20 +392,20 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 	if err != nil {
 		return nil, fmt.Errorf("failed to create operation record: %v", err)
 	}
-	
+
 	// Step 5: Process entities in batches
 	batchSize := 100
 	successCount := 0
 	failedCount := 0
 	var failedEntities []string
-	
+
 	for i := 0; i < len(input.EntityIDs); i += batchSize {
 		end := i + batchSize
 		if end > len(input.EntityIDs) {
 			end = len(input.EntityIDs)
 		}
 		batch := input.EntityIDs[i:end]
-		
+
 		// Process batch
 		var batchResult map[string]interface{}
 		err = workflow.ExecuteActivity(ctx, ProcessBulkBatchActivity, map[string]interface{}{
@@ -415,7 +416,7 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 			"reason":        input.Reason,
 			"actorId":       jc.ActorID,
 		}).Get(ctx, &batchResult)
-		
+
 		if err != nil {
 			// Mark all in batch as failed
 			failedCount += len(batch)
@@ -427,17 +428,17 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 			batchFailed := int(batchResult["failedCount"].(float64))
 			successCount += batchSuccess
 			failedCount += batchFailed
-			
+
 			if failed, ok := batchResult["failedEntities"].([]string); ok {
 				failedEntities = append(failedEntities, failed...)
 			}
 		}
-		
+
 		// Update progress
 		progress := float64(i+len(batch)) / float64(len(input.EntityIDs)) * 100
 		workflow.ExecuteActivity(ctx, UpdateBulkOperationProgressActivity, operationID, progress)
 	}
-	
+
 	// Step 6: Update operation status
 	status := "completed"
 	if failedCount > 0 && successCount == 0 {
@@ -445,14 +446,14 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 	} else if failedCount > 0 {
 		status = "partial"
 	}
-	
+
 	workflow.ExecuteActivity(ctx, UpdateBulkOperationStatusActivity, operationID, map[string]interface{}{
 		"status":         status,
 		"successCount":   successCount,
 		"failedCount":    failedCount,
 		"failedEntities": failedEntities,
 	})
-	
+
 	// Step 7: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "bulk_operation.completed", map[string]interface{}{
 		"operationId":   operationID,
@@ -463,7 +464,7 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 		"failedCount":   failedCount,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 8: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "bulk_operation",
@@ -481,7 +482,7 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 			"reason":        input.Reason,
 		},
 	})
-	
+
 	// Step 9: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "bulk_operation_facts", map[string]interface{}{
 		"operationId":   operationID,
@@ -493,14 +494,14 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 		"failedCount":   failedCount,
 		"tenantId":      jc.TenantID,
 	})
-	
+
 	// Step 10: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"operationId":  operationID,
 		"successCount": successCount,
 		"failedCount":  failedCount,
 	})
-	
+
 	return &BulkOperationResult{
 		JourneyRunID:   jc.JourneyRunID,
 		OperationID:    operationID,
@@ -518,11 +519,11 @@ func BulkOperationJourney(ctx workflow.Context, input BulkOperationInput) (*Bulk
 // BFF: trpc.worldClass.offlineSync
 // Workflow: OfflineSyncWorkflow
 type OfflineSyncInput struct {
-	JourneyContext *JourneyContext `json:"journeyContext"`
-	DeviceID       string          `json:"deviceId"`
-	LastSyncTime   time.Time       `json:"lastSyncTime"`
-	PendingChanges []PendingChange `json:"pendingChanges"`
-	ConflictResolution string      `json:"conflictResolution"` // "server_wins", "client_wins", "merge"
+	JourneyContext     *JourneyContext `json:"journeyContext"`
+	DeviceID           string          `json:"deviceId"`
+	LastSyncTime       time.Time       `json:"lastSyncTime"`
+	PendingChanges     []PendingChange `json:"pendingChanges"`
+	ConflictResolution string          `json:"conflictResolution"` // "server_wins", "client_wins", "merge"
 }
 
 type PendingChange struct {
@@ -534,22 +535,22 @@ type PendingChange struct {
 }
 
 type OfflineSyncResult struct {
-	JourneyRunID     string    `json:"journeyRunId"`
-	SyncID           string    `json:"syncId"`
-	DeviceID         string    `json:"deviceId"`
-	UploadedCount    int       `json:"uploadedCount"`
-	DownloadedCount  int       `json:"downloadedCount"`
-	ConflictsResolved int      `json:"conflictsResolved"`
-	SyncedAt         time.Time `json:"syncedAt"`
+	JourneyRunID      string    `json:"journeyRunId"`
+	SyncID            string    `json:"syncId"`
+	DeviceID          string    `json:"deviceId"`
+	UploadedCount     int       `json:"uploadedCount"`
+	DownloadedCount   int       `json:"downloadedCount"`
+	ConflictsResolved int       `json:"conflictsResolved"`
+	SyncedAt          time.Time `json:"syncedAt"`
 }
 
 // OfflineSyncJourney orchestrates offline data synchronization
 func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineSyncResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -557,28 +558,28 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":    "offline_sync",
 		"deviceId":       input.DeviceID,
 		"pendingChanges": len(input.PendingChanges),
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "sync:execute").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Verify device registration
 	var deviceValid bool
 	err = workflow.ExecuteActivity(ctx, VerifyDeviceRegistrationActivity, input.DeviceID, jc.ActorID).Get(ctx, &deviceValid)
 	if err != nil || !deviceValid {
 		return nil, fmt.Errorf("device not registered")
 	}
-	
+
 	// Step 4: Create sync record
 	var syncID string
 	err = workflow.ExecuteActivity(ctx, CreateSyncRecordActivity, map[string]interface{}{
@@ -592,17 +593,17 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sync record: %v", err)
 	}
-	
+
 	// Step 5: Process pending changes (upload)
 	uploadedCount := 0
 	conflictsResolved := 0
-	
+
 	for _, change := range input.PendingChanges {
 		// Check for conflicts
 		var hasConflict bool
 		var serverVersion map[string]interface{}
 		err = workflow.ExecuteActivity(ctx, CheckSyncConflictActivity, change.EntityType, change.EntityID, change.Timestamp).Get(ctx, &hasConflict)
-		
+
 		if hasConflict {
 			// Resolve conflict based on strategy
 			switch input.ConflictResolution {
@@ -622,21 +623,21 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 			// No conflict, apply change
 			err = workflow.ExecuteActivity(ctx, ApplySyncChangeActivity, change).Get(ctx, nil)
 		}
-		
+
 		if err == nil {
 			uploadedCount++
 		}
 	}
-	
+
 	// Step 6: Get server changes since last sync (download)
 	var serverChanges []map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GetServerChangesSinceActivity, input.LastSyncTime, jc.ActorID, jc.TenantID).Get(ctx, &serverChanges)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get server changes: %v", err)
 	}
-	
+
 	downloadedCount := len(serverChanges)
-	
+
 	// Step 7: Update sync record
 	workflow.ExecuteActivity(ctx, UpdateSyncRecordActivity, syncID, map[string]interface{}{
 		"status":            "completed",
@@ -645,10 +646,10 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 		"conflictsResolved": conflictsResolved,
 		"completedAt":       time.Now(),
 	})
-	
+
 	// Step 8: Update device last sync time
 	workflow.ExecuteActivity(ctx, UpdateDeviceLastSyncActivity, input.DeviceID, time.Now())
-	
+
 	// Step 9: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "sync.completed", map[string]interface{}{
 		"syncId":            syncID,
@@ -658,7 +659,7 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 		"conflictsResolved": conflictsResolved,
 		"correlationId":     jc.CorrelationID,
 	})
-	
+
 	// Step 10: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "offline_sync",
@@ -674,14 +675,14 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 			"conflictsResolved": conflictsResolved,
 		},
 	})
-	
+
 	// Step 11: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"syncId":          syncID,
 		"uploadedCount":   uploadedCount,
 		"downloadedCount": downloadedCount,
 	})
-	
+
 	return &OfflineSyncResult{
 		JourneyRunID:      jc.JourneyRunID,
 		SyncID:            syncID,
@@ -696,47 +697,47 @@ func OfflineSyncJourney(ctx workflow.Context, input OfflineSyncInput) (*OfflineS
 // RegisterAdminJourneys registers all admin journey definitions
 func RegisterAdminJourneys(registry *JourneyRegistry) {
 	registry.Register(&JourneyDefinition{
-		Key:          "approval_delegation",
-		Name:         "Approval Delegation",
-		Description:  "Delegate approval authority to another user",
-		Category:     "admin",
-		WorkflowType: "ApprovalDelegationJourney",
+		Key:                 "approval_delegation",
+		Name:                "Approval Delegation",
+		Description:         "Delegate approval authority to another user",
+		Category:            "admin",
+		WorkflowType:        "ApprovalDelegationJourney",
 		RequiredPermissions: []string{"approval:delegate"},
 		UIEntryPoints:       []string{"Admin:ApprovalsPage"},
 		BFFEndpoints:        []string{"trpc.approvals.delegate"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "break_glass_access",
-		Name:         "Break Glass Access",
-		Description:  "Emergency access to restricted resources",
-		Category:     "admin",
-		WorkflowType: "BreakGlassAccessJourney",
+		Key:                 "break_glass_access",
+		Name:                "Break Glass Access",
+		Description:         "Emergency access to restricted resources",
+		Category:            "admin",
+		WorkflowType:        "BreakGlassAccessJourney",
 		RequiredPermissions: []string{"system:break_glass"},
 		UIEntryPoints:       []string{"Admin:EmergencyAccessPage"},
 		BFFEndpoints:        []string{"trpc.approvals.breakGlass"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "bulk_operation",
-		Name:         "Bulk Operations",
-		Description:  "Perform bulk operations on entities",
-		Category:     "admin",
-		WorkflowType: "BulkOperationJourney",
+		Key:                 "bulk_operation",
+		Name:                "Bulk Operations",
+		Description:         "Perform bulk operations on entities",
+		Category:            "admin",
+		WorkflowType:        "BulkOperationJourney",
 		RequiredPermissions: []string{"bulk:execute"},
 		UIEntryPoints:       []string{"Admin:BulkOperationsPage"},
 		BFFEndpoints:        []string{"trpc.workflow.bulkOperation"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "offline_sync",
-		Name:         "Offline Sync",
-		Description:  "Synchronize offline mobile data with server",
-		Category:     "admin",
-		WorkflowType: "OfflineSyncJourney",
+		Key:                 "offline_sync",
+		Name:                "Offline Sync",
+		Description:         "Synchronize offline mobile data with server",
+		Category:            "admin",
+		WorkflowType:        "OfflineSyncJourney",
 		RequiredPermissions: []string{"sync:execute"},
 		UIEntryPoints:       []string{"Mobile:SyncScreen", "Admin:SyncStatusPage"},
 		BFFEndpoints:        []string{"trpc.worldClass.offlineSync.sync"},
