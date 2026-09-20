@@ -59,18 +59,8 @@ export async function submitBlockchainTransaction(
       status: "pending",
     });
 
-    // Simulate blockchain confirmation (in production, this would be async)
-    setTimeout(async () => {
-      const db2 = await getDb();
-      if (db2) {
-        await db2
-          .update(blockchainTransactions)
-          .set({ status: "confirmed" })
-          .where(eq(blockchainTransactions.transactionId, transactionId));
-      }
-    }, 2000);
-
-    console.log(`[Blockchain] Transaction submitted: ${transactionId}`);
+    // The database record remains pending until a verified Fabric receipt updates it.
+    console.log(`[Blockchain] Transaction recorded as pending: ${transactionId}`);
     return transactionId;
   } catch (error) {
     console.error("[Blockchain] Failed to submit transaction:", error);
@@ -132,9 +122,11 @@ export async function createAuditTrailEntry(
     // Get previous hash for chain integrity
     const previousEntries = await db
       .select()
-      .take(1);
+      .from(blockchainTransactions)
+      .orderBy(desc(blockchainTransactions.id))
+      .limit(1);
 
-    const previousHash = previousEntries.length > 0 ? previousEntries[0].currentHash : null;
+    const previousHash = previousEntries.length > 0 ? previousEntries[0].transactionHash : null;
 
     // Calculate current hash
     const hashInput = JSON.stringify({

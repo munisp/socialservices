@@ -1,0 +1,8 @@
+{
+  "source_export": "/home/ubuntu/socialservices/admin-portal/data/synthetic_transactions.csv",
+  "dataset_kind": "synthetic",
+  "source_metadata": {},
+  "trained_at": "2026-09-20T00:21:26.961925+00:00",
+  "orchestrator": "continuous_train.py",
+  "ray": true
+}

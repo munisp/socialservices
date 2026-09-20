@@ -21,7 +21,7 @@ type TigerBeetleClient struct {
 
 // NewTigerBeetleClient creates a new TigerBeetle client
 func NewTigerBeetleClient(addresses []string) (*TigerBeetleClient, error) {
-	client, err := tb.NewClient(0, addresses)
+	client, err := tb.NewClient(tb_types.Uint128{}, addresses, 32)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TigerBeetle client: %w", err)
 	}
@@ -73,18 +73,29 @@ func UUIDFromString(uuidStr string) (tb_types.Uint128, error) {
 
 // Uint128ToString converts TigerBeetle Uint128 to hex string
 func Uint128ToString(id tb_types.Uint128) string {
-	return fmt.Sprintf("%032x", id[:])
+	return fmt.Sprintf("%032x", id.Bytes())
+}
+
+// uint128ToUint64 converts a TigerBeetle amount and rejects amounts this legacy API cannot represent.
+func uint128ToUint64(value tb_types.Uint128) (uint64, error) {
+	bytes := value.Bytes()
+	for _, byteValue := range bytes[8:] {
+		if byteValue != 0 {
+			return 0, fmt.Errorf("TigerBeetle amount exceeds uint64")
+		}
+	}
+	return binary.LittleEndian.Uint64(bytes[:8]), nil
 }
 
 // TransferFlags for TigerBeetle transfer operations
 const (
 	TransferFlagNone            uint16 = 0
-	TransferFlagPending         uint16 = 1 << 0
-	TransferFlagPostPending     uint16 = 1 << 1
-	TransferFlagVoidPending     uint16 = 1 << 2
-	TransferFlagLinked          uint16 = 1 << 4
-	TransferFlagBalancingDebit  uint16 = 1 << 5
-	TransferFlagBalancingCredit uint16 = 1 << 6
+	TransferFlagLinked          uint16 = 1 << 0
+	TransferFlagPending         uint16 = 1 << 1
+	TransferFlagPostPending     uint16 = 1 << 2
+	TransferFlagVoidPending     uint16 = 1 << 3
+	TransferFlagBalancingDebit  uint16 = 1 << 4
+	TransferFlagBalancingCredit uint16 = 1 << 5
 )
 
 // AccountFlags for TigerBeetle account operations
@@ -115,7 +126,7 @@ func (t *TigerBeetleClient) CreateAccountWithFlags(accountID tb_types.Uint128, l
 }
 
 // CreateAccountsBatch creates multiple accounts in a single batch
-func (t *TigerBeetleClient) CreateAccountsBatch(accounts []tb_types.Account) ([]tb_types.CreateAccountsResult, error) {
+func (t *TigerBeetleClient) CreateAccountsBatch(accounts []tb_types.Account) ([]tb_types.AccountEventResult, error) {
 	results, err := t.client.CreateAccounts(accounts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create accounts batch: %w", err)
@@ -132,7 +143,7 @@ func (t *TigerBeetleClient) CreateTransfer(transferID tb_types.Uint128, debitAcc
 func (t *TigerBeetleClient) CreateTransferWithFlags(transferID tb_types.Uint128, debitAccountID tb_types.Uint128, creditAccountID tb_types.Uint128, amount uint64, ledger uint32, code uint16, flags uint16, pendingID tb_types.Uint128) error {
 	transfer := tb_types.Transfer{
 		ID: transferID, DebitAccountID: debitAccountID, CreditAccountID: creditAccountID,
-		Amount: amount, Ledger: ledger, Code: code, Flags: flags, Timestamp: 0,
+		Amount: tb_types.ToUint128(amount), Ledger: ledger, Code: code, Flags: flags, Timestamp: 0,
 	}
 	if flags&TransferFlagPostPending != 0 || flags&TransferFlagVoidPending != 0 {
 		transfer.PendingID = pendingID
@@ -151,7 +162,7 @@ func (t *TigerBeetleClient) CreateTransferWithFlags(transferID tb_types.Uint128,
 func (t *TigerBeetleClient) CreatePendingTransfer(transferID tb_types.Uint128, debitAccountID tb_types.Uint128, creditAccountID tb_types.Uint128, amount uint64, ledger uint32, code uint16, timeout uint32) error {
 	transfer := tb_types.Transfer{
 		ID: transferID, DebitAccountID: debitAccountID, CreditAccountID: creditAccountID,
-		Amount: amount, Ledger: ledger, Code: code, Flags: TransferFlagPending, Timeout: timeout, Timestamp: 0,
+		Amount: tb_types.ToUint128(amount), Ledger: ledger, Code: code, Flags: TransferFlagPending, Timeout: timeout, Timestamp: 0,
 	}
 	results, err := t.client.CreateTransfers([]tb_types.Transfer{transfer})
 	if err != nil {
@@ -165,7 +176,7 @@ func (t *TigerBeetleClient) CreatePendingTransfer(transferID tb_types.Uint128, d
 
 // PostPendingTransfer finalizes a pending transfer (commits the reservation)
 func (t *TigerBeetleClient) PostPendingTransfer(postTransferID tb_types.Uint128, pendingTransferID tb_types.Uint128, amount uint64) error {
-	transfer := tb_types.Transfer{ID: postTransferID, PendingID: pendingTransferID, Amount: amount, Flags: TransferFlagPostPending, Timestamp: 0}
+	transfer := tb_types.Transfer{ID: postTransferID, PendingID: pendingTransferID, Amount: tb_types.ToUint128(amount), Flags: TransferFlagPostPending, Timestamp: 0}
 	results, err := t.client.CreateTransfers([]tb_types.Transfer{transfer})
 	if err != nil {
 		return fmt.Errorf("failed to post pending transfer: %w", err)
@@ -214,7 +225,7 @@ func (t *TigerBeetleClient) CreateLinkedTransfers(ledger uint32, transfers []Lin
 		}
 		tbTransfers[i] = tb_types.Transfer{
 			ID: transferID, DebitAccountID: lt.DebitAccountID, CreditAccountID: lt.CreditAccountID,
-			Amount: lt.Amount, Ledger: ledger, Code: lt.Code, Flags: flags, UserData128: lt.UserData128, Timestamp: 0,
+			Amount: tb_types.ToUint128(lt.Amount), Ledger: ledger, Code: lt.Code, Flags: flags, UserData128: lt.UserData128, Timestamp: 0,
 		}
 	}
 	results, err := t.client.CreateTransfers(tbTransfers)
@@ -228,7 +239,7 @@ func (t *TigerBeetleClient) CreateLinkedTransfers(ledger uint32, transfers []Lin
 }
 
 // CreateTransfersBatch creates multiple transfers in a single batch (not linked)
-func (t *TigerBeetleClient) CreateTransfersBatch(transfers []tb_types.Transfer) ([]tb_types.CreateTransfersResult, error) {
+func (t *TigerBeetleClient) CreateTransfersBatch(transfers []tb_types.Transfer) ([]tb_types.TransferEventResult, error) {
 	results, err := t.client.CreateTransfers(transfers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transfers batch: %w", err)
@@ -245,7 +256,23 @@ func (t *TigerBeetleClient) GetAccountBalance(accountID tb_types.Uint128) (debit
 	if len(accounts) == 0 {
 		return 0, 0, 0, 0, fmt.Errorf("account not found")
 	}
-	return accounts[0].DebitsPosted, accounts[0].CreditsPosted, accounts[0].DebitsPending, accounts[0].CreditsPending, nil
+	debitsPosted, err = uint128ToUint64(accounts[0].DebitsPosted)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	creditsPosted, err = uint128ToUint64(accounts[0].CreditsPosted)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	debitsPending, err = uint128ToUint64(accounts[0].DebitsPending)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	creditsPending, err = uint128ToUint64(accounts[0].CreditsPending)
+	if err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return debitsPosted, creditsPosted, debitsPending, creditsPending, nil
 }
 
 // LookupAccounts retrieves multiple accounts
@@ -485,7 +512,7 @@ func (m *TigerBeetleManager) DisburseFundsBatch(ctx context.Context, programAcco
 		totalAmount += item.AmountCents
 		transfers[i] = tb_types.Transfer{
 			ID: transferID, DebitAccountID: programAccountID, CreditAccountID: item.BeneficiaryAccountID,
-			Amount: item.AmountCents, Ledger: LedgerSocialProtection, Code: TransferCodeDisbursement, Flags: TransferFlagNone, Timestamp: 0,
+			Amount: tb_types.ToUint128(item.AmountCents), Ledger: LedgerSocialProtection, Code: TransferCodeDisbursement, Flags: TransferFlagNone, Timestamp: 0,
 		}
 	}
 	results, err := m.client.CreateTransfersBatch(transfers)

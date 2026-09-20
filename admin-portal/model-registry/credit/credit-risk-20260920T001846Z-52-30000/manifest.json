@@ -1,0 +1,40 @@
+{
+  "version": "credit-risk-20260920T001846Z-52-30000",
+  "task": "credit_risk",
+  "model_type": "pytorch_mlp",
+  "framework": "torch",
+  "features": [
+    "income_ngn",
+    "benefit_amount_ngn",
+    "household_size",
+    "dependency_ratio",
+    "payment_failures_90d",
+    "account_age_days",
+    "income_volatility",
+    "debt_service_ratio"
+  ],
+  "weights": "credit_mlp.pt",
+  "preprocess": "preprocess.pt",
+  "metrics": {
+    "accuracy": 0.6173333333333333,
+    "precision": 0.15707236842105263,
+    "recall": 0.60828025477707,
+    "f1": 0.24967320261437906,
+    "brier": 0.23308134078979492,
+    "support": 6000,
+    "threshold": 0.5,
+    "tp": 382,
+    "tn": 3322,
+    "fp": 2050,
+    "fn": 246
+  },
+  "dataset_kind": "synthetic",
+  "training_rows": 30000,
+  "seed": 52,
+  "training_data_sha256": "d8de9d87c3eb8289a04427f2323b19ea1960420d7ba2f3fa59833863a0cdd913",
+  "weights_sha256": "1903aa8472c4054d99a4805a0c2eee2a298f6fc6b4fd4c379e4cf1c80f9c57ca",
+  "cpu_inference": true,
+  "production_validated": false,
+  "prohibited_use": "Do not use this synthetic model to determine social-benefit eligibility or credit access.",
+  "dataset_serialization": "csv_utf8_lf"
+}

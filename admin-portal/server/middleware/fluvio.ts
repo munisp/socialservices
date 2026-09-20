@@ -49,7 +49,8 @@ export async function getFluvioClient() {
 export async function produceToStream(topic: StreamTopic, data: any): Promise<void> {
   const client = await getFluvioClient();
   if (!client) {
-    console.warn(`[Fluvio] Client not available, skipping stream: ${topic}`);
+    if (process.env.NODE_ENV === "production" && process.env.FLUVIO_REQUIRED === "true") throw new Error(`Fluvio unavailable for required stream ${topic}`);
+    console.warn(`[Fluvio] Client not available, skipping optional stream: ${topic}`);
     return;
   }
 
@@ -65,6 +66,7 @@ export async function produceToStream(topic: StreamTopic, data: any): Promise<vo
     console.log(`[Fluvio] Produced to ${topic}`);
   } catch (error) {
     console.error(`[Fluvio] Failed to produce to ${topic}:`, error);
+    if (process.env.NODE_ENV === "production" && process.env.FLUVIO_REQUIRED === "true") throw error;
   }
 }
 

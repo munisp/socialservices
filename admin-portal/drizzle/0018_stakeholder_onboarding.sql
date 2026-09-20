@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS stakeholder_organizations (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  id INT AUTO_INCREMENT PRIMARY KEY,
   legal_name VARCHAR(255) NOT NULL,
   stakeholder_type VARCHAR(50) NOT NULL,
   registration_reference VARCHAR(255) NOT NULL UNIQUE,
@@ -8,32 +8,48 @@ CREATE TABLE IF NOT EXISTS stakeholder_organizations (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS stakeholder_onboarding (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  user_id BIGINT NULL,
-  organization_id BIGINT NULL,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NULL,
+  organization_id INT NULL,
   stakeholder_type VARCHAR(50) NOT NULL,
   display_name VARCHAR(255) NOT NULL,
+  email VARCHAR(320),
+  phone VARCHAR(32),
   state ENUM('invited','identity_pending','organization_pending','consent_pending','scope_pending','training_pending','mfa_pending','active','suspended','offboarded','rejected') NOT NULL DEFAULT 'invited',
   region_codes JSON NOT NULL,
   program_ids JSON NOT NULL,
-  consent_version VARCHAR(100) NOT NULL,
+  consent_version VARCHAR(100) NULL,
   identity_evidence_refs JSON NOT NULL,
   requires_mfa BOOLEAN NOT NULL DEFAULT TRUE,
+  identity_verified_at TIMESTAMP NULL,
+  organization_verified_at TIMESTAMP NULL,
+  consent_accepted_at TIMESTAMP NULL,
+  scope_approved_at TIMESTAMP NULL,
+  training_completed_at TIMESTAMP NULL,
+  mfa_enrolled_at TIMESTAMP NULL,
+  safeguarding_attested_at TIMESTAMP NULL,
+  payment_certified_at TIMESTAMP NULL,
+  suspended_at TIMESTAMP NULL,
+  offboarded_at TIMESTAMP NULL,
+  offboarding_reason TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_stakeholder_state (state),
   INDEX idx_stakeholder_type (stakeholder_type),
-  CONSTRAINT fk_stakeholder_org FOREIGN KEY (organization_id) REFERENCES stakeholder_organizations(id)
+  UNIQUE KEY uq_stakeholder_user_type (user_id, stakeholder_type),
+  CONSTRAINT fk_stakeholder_org FOREIGN KEY (organization_id) REFERENCES stakeholder_organizations(id),
+  CONSTRAINT fk_stakeholder_user FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE TABLE IF NOT EXISTS stakeholder_onboarding_events (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  onboarding_id BIGINT NOT NULL,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  onboarding_id INT NOT NULL,
   from_state VARCHAR(50),
   to_state VARCHAR(50) NOT NULL,
-  actor_user_id BIGINT NULL,
+  actor_user_id INT NULL,
   reason TEXT NOT NULL,
   evidence JSON,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_onboarding_events (onboarding_id, created_at),
-  CONSTRAINT fk_onboarding_event FOREIGN KEY (onboarding_id) REFERENCES stakeholder_onboarding(id)
+  CONSTRAINT fk_onboarding_event FOREIGN KEY (onboarding_id) REFERENCES stakeholder_onboarding(id),
+  CONSTRAINT fk_onboarding_actor FOREIGN KEY (actor_user_id) REFERENCES users(id)
 );

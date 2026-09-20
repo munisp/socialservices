@@ -16,24 +16,23 @@ export function getOpenSearchClient(): Client | null {
 
   const opensearchUrl = process.env.OPENSEARCH_NODE;
   
-  // If no OpenSearch URL configured, run in mock mode
+  // Search is optional in development but never silently mocked in production.
   if (!opensearchUrl) {
-    console.log("[OpenSearch] No OPENSEARCH_NODE configured - running in mock mode (search disabled)");
+    if (process.env.NODE_ENV === "production") throw new Error("OPENSEARCH_NODE is required in production");
+    console.log("[OpenSearch] No OPENSEARCH_NODE configured - search disabled in development");
     return null;
   }
 
-  const username = process.env.OPENSEARCH_USERNAME || "admin";
-  const password = process.env.OPENSEARCH_PASSWORD || "Admin123!";
+  const username = process.env.OPENSEARCH_USERNAME;
+  const password = process.env.OPENSEARCH_PASSWORD;
+  if (process.env.NODE_ENV === "production" && (!username || !password)) throw new Error("OpenSearch credentials are required in production");
 
   try {
     _client = new Client({
       node: opensearchUrl,
-      auth: {
-        username,
-        password,
-      },
+      auth: username && password ? { username, password } : undefined,
       ssl: {
-        rejectUnauthorized: false, // For development only
+        rejectUnauthorized: process.env.OPENSEARCH_TLS_VERIFY !== "false",
       },
     });
 
@@ -158,6 +157,7 @@ export async function indexDocument(
     });
   } catch (error) {
     console.error(`[OpenSearch] Failed to index document in ${index}:`, error);
+    if (process.env.NODE_ENV === "production") throw error;
   }
 }
 
@@ -175,6 +175,7 @@ export async function deleteDocument(index: string, id: string | number): Promis
     });
   } catch (error) {
     console.error(`[OpenSearch] Failed to delete document from ${index}:`, error);
+    if (process.env.NODE_ENV === "production") throw error;
   }
 }
 

@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/admin-portal/orchestrator/outbox"
 )
 
 // ReadModelProjector handles building and maintaining read models from events

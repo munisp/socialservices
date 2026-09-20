@@ -82,7 +82,6 @@ func GrievanceSubmissionWorkflow(ctx workflow.Context, input GrievanceInput) (*G
 
 	// Step 5: Run ML classification for auto-routing
 	var suggestedCategory string
-	var suggestedPriority string
 	err = workflow.ExecuteActivity(ctx, "ClassifyGrievanceActivity", input.Description).Get(ctx, &suggestedCategory)
 	if err == nil && suggestedCategory != input.Category {
 		logger.Info("ML suggested different category", "original", input.Category, "suggested", suggestedCategory)

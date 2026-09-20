@@ -648,3 +648,19 @@ export type InsertWorkflowMetric = typeof workflowMetrics.$inferInsert;
 
 export type WorkflowAlert = typeof workflowAlerts.$inferSelect;
 export type InsertWorkflowAlert = typeof workflowAlerts.$inferInsert;
+
+export const stakeholderOrganizations = mysqlTable("stakeholder_organizations", {
+  id: int("id").autoincrement().primaryKey(), legalName: varchar("legal_name", { length: 255 }).notNull(), stakeholderType: varchar("stakeholder_type", { length: 50 }).notNull(), registrationReference: varchar("registration_reference", { length: 255 }).notNull().unique(), verificationStatus: mysqlEnum("verification_status", ["pending", "verified", "rejected", "suspended"]).default("pending").notNull(), createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export const stakeholderOnboardings = mysqlTable("stakeholder_onboarding", {
+  id: int("id").autoincrement().primaryKey(), userId: int("user_id").references(() => users.id), organizationId: int("organization_id").references(() => stakeholderOrganizations.id), stakeholderType: varchar("stakeholder_type", { length: 50 }).notNull(), displayName: varchar("display_name", { length: 255 }).notNull(), email: varchar("email", { length: 320 }), phone: varchar("phone", { length: 32 }), state: mysqlEnum("state", ["invited", "identity_pending", "organization_pending", "consent_pending", "scope_pending", "training_pending", "mfa_pending", "active", "suspended", "offboarded", "rejected"]).default("invited").notNull(), regionCodes: json("region_codes").$type<string[]>().notNull(), programIds: json("program_ids").$type<string[]>().notNull(), consentVersion: varchar("consent_version", { length: 100 }), identityEvidenceRefs: json("identity_evidence_refs").$type<string[]>().notNull(), requiresMfa: boolean("requires_mfa").default(true).notNull(), identityVerifiedAt: timestamp("identity_verified_at"), organizationVerifiedAt: timestamp("organization_verified_at"), consentAcceptedAt: timestamp("consent_accepted_at"), scopeApprovedAt: timestamp("scope_approved_at"), trainingCompletedAt: timestamp("training_completed_at"), mfaEnrolledAt: timestamp("mfa_enrolled_at"), safeguardingAttestedAt: timestamp("safeguarding_attested_at"), paymentCertifiedAt: timestamp("payment_certified_at"), suspendedAt: timestamp("suspended_at"), offboardedAt: timestamp("offboarded_at"), offboardingReason: text("offboarding_reason"), createdAt: timestamp("created_at").defaultNow().notNull(), updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export const stakeholderOnboardingEvents = mysqlTable("stakeholder_onboarding_events", {
+  id: int("id").autoincrement().primaryKey(), onboardingId: int("onboarding_id").notNull().references(() => stakeholderOnboardings.id), fromState: varchar("from_state", { length: 50 }), toState: varchar("to_state", { length: 50 }).notNull(), actorUserId: int("actor_user_id").references(() => users.id), reason: text("reason").notNull(), evidence: json("evidence").$type<Record<string, unknown>>(), createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type StakeholderOrganization = typeof stakeholderOrganizations.$inferSelect;
+export type StakeholderOnboarding = typeof stakeholderOnboardings.$inferSelect;
+export type StakeholderOnboardingEvent = typeof stakeholderOnboardingEvents.$inferSelect;

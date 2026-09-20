@@ -1,6 +1,7 @@
 package interop
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -22,52 +23,52 @@ import (
 type SectorType string
 
 const (
-	SectorHealth    SectorType = "health"
-	SectorEducation SectorType = "education"
-	SectorTax       SectorType = "tax"
-	SectorLabor     SectorType = "labor"
+	SectorHealth      SectorType = "health"
+	SectorEducation   SectorType = "education"
+	SectorTax         SectorType = "tax"
+	SectorLabor       SectorType = "labor"
 	SectorAgriculture SectorType = "agriculture"
-	SectorHousing   SectorType = "housing"
-	SectorSocial    SectorType = "social"
+	SectorHousing     SectorType = "housing"
+	SectorSocial      SectorType = "social"
 )
 
 // DataExchangeType represents the type of data exchange
 type DataExchangeType string
 
 const (
-	ExchangeQuery    DataExchangeType = "query"
-	ExchangePush     DataExchangeType = "push"
+	ExchangeQuery     DataExchangeType = "query"
+	ExchangePush      DataExchangeType = "push"
 	ExchangeSubscribe DataExchangeType = "subscribe"
-	ExchangeBulk     DataExchangeType = "bulk"
+	ExchangeBulk      DataExchangeType = "bulk"
 )
 
 // ConsentStatus represents consent for data sharing
 type ConsentStatus string
 
 const (
-	ConsentGranted  ConsentStatus = "granted"
-	ConsentDenied   ConsentStatus = "denied"
-	ConsentPending  ConsentStatus = "pending"
-	ConsentRevoked  ConsentStatus = "revoked"
-	ConsentExpired  ConsentStatus = "expired"
+	ConsentGranted ConsentStatus = "granted"
+	ConsentDenied  ConsentStatus = "denied"
+	ConsentPending ConsentStatus = "pending"
+	ConsentRevoked ConsentStatus = "revoked"
+	ConsentExpired ConsentStatus = "expired"
 )
 
 // SectorEndpoint represents a sector system endpoint
 type SectorEndpoint struct {
-	ID            string            `json:"id"`
-	Sector        SectorType        `json:"sector"`
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	BaseURL       string            `json:"baseUrl"`
-	AuthType      string            `json:"authType"` // oauth2, api_key, mtls, x-road
-	AuthConfig    json.RawMessage   `json:"authConfig"`
-	DataFormats   []string          `json:"dataFormats"` // fhir, ceds, xbrl, custom
-	Capabilities  []string          `json:"capabilities"`
-	RateLimit     int               `json:"rateLimit"` // requests per minute
-	Timeout       time.Duration     `json:"timeout"`
-	Enabled       bool              `json:"enabled"`
+	ID              string          `json:"id"`
+	Sector          SectorType      `json:"sector"`
+	Name            string          `json:"name"`
+	Description     string          `json:"description"`
+	BaseURL         string          `json:"baseUrl"`
+	AuthType        string          `json:"authType"` // oauth2, api_key, mtls, x-road
+	AuthConfig      json.RawMessage `json:"authConfig"`
+	DataFormats     []string        `json:"dataFormats"` // fhir, ceds, xbrl, custom
+	Capabilities    []string        `json:"capabilities"`
+	RateLimit       int             `json:"rateLimit"` // requests per minute
+	Timeout         time.Duration   `json:"timeout"`
+	Enabled         bool            `json:"enabled"`
 	LastHealthCheck *time.Time      `json:"lastHealthCheck,omitempty"`
-	HealthStatus  string            `json:"healthStatus"`
+	HealthStatus    string          `json:"healthStatus"`
 }
 
 // DataSharingAgreement represents a data sharing agreement between sectors
@@ -89,36 +90,36 @@ type DataSharingAgreement struct {
 
 // BeneficiaryConsent represents individual consent for data sharing
 type BeneficiaryConsent struct {
-	ID            int64         `json:"id" db:"id"`
-	BeneficiaryID string        `json:"beneficiaryId" db:"beneficiary_id"`
-	Sector        SectorType    `json:"sector" db:"sector"`
+	ID            int64           `json:"id" db:"id"`
+	BeneficiaryID string          `json:"beneficiaryId" db:"beneficiary_id"`
+	Sector        SectorType      `json:"sector" db:"sector"`
 	DataTypes     json.RawMessage `json:"dataTypes" db:"data_types"`
-	Purpose       string        `json:"purpose" db:"purpose"`
-	Status        ConsentStatus `json:"status" db:"status"`
-	GrantedAt     *time.Time    `json:"grantedAt,omitempty" db:"granted_at"`
-	ExpiresAt     *time.Time    `json:"expiresAt,omitempty" db:"expires_at"`
-	RevokedAt     *time.Time    `json:"revokedAt,omitempty" db:"revoked_at"`
-	ConsentToken  string        `json:"consentToken" db:"consent_token"`
-	CreatedAt     time.Time     `json:"createdAt" db:"created_at"`
+	Purpose       string          `json:"purpose" db:"purpose"`
+	Status        ConsentStatus   `json:"status" db:"status"`
+	GrantedAt     *time.Time      `json:"grantedAt,omitempty" db:"granted_at"`
+	ExpiresAt     *time.Time      `json:"expiresAt,omitempty" db:"expires_at"`
+	RevokedAt     *time.Time      `json:"revokedAt,omitempty" db:"revoked_at"`
+	ConsentToken  string          `json:"consentToken" db:"consent_token"`
+	CreatedAt     time.Time       `json:"createdAt" db:"created_at"`
 }
 
 // DataExchangeLog represents a log of data exchanges
 type DataExchangeLog struct {
-	ID              int64            `json:"id" db:"id"`
-	ExchangeID      string           `json:"exchangeId" db:"exchange_id"`
-	SourceSector    SectorType       `json:"sourceSector" db:"source_sector"`
-	TargetSector    SectorType       `json:"targetSector" db:"target_sector"`
-	ExchangeType    DataExchangeType `json:"exchangeType" db:"exchange_type"`
-	BeneficiaryID   *string          `json:"beneficiaryId,omitempty" db:"beneficiary_id"`
-	DataTypes       json.RawMessage  `json:"dataTypes" db:"data_types"`
-	RecordCount     int              `json:"recordCount" db:"record_count"`
-	Status          string           `json:"status" db:"status"` // pending, completed, failed
-	ErrorMessage    *string          `json:"errorMessage,omitempty" db:"error_message"`
-	RequestedBy     int64            `json:"requestedBy" db:"requested_by"`
-	AgreementID     *int64           `json:"agreementId,omitempty" db:"agreement_id"`
-	ConsentID       *int64           `json:"consentId,omitempty" db:"consent_id"`
-	StartedAt       time.Time        `json:"startedAt" db:"started_at"`
-	CompletedAt     *time.Time       `json:"completedAt,omitempty" db:"completed_at"`
+	ID            int64            `json:"id" db:"id"`
+	ExchangeID    string           `json:"exchangeId" db:"exchange_id"`
+	SourceSector  SectorType       `json:"sourceSector" db:"source_sector"`
+	TargetSector  SectorType       `json:"targetSector" db:"target_sector"`
+	ExchangeType  DataExchangeType `json:"exchangeType" db:"exchange_type"`
+	BeneficiaryID *string          `json:"beneficiaryId,omitempty" db:"beneficiary_id"`
+	DataTypes     json.RawMessage  `json:"dataTypes" db:"data_types"`
+	RecordCount   int              `json:"recordCount" db:"record_count"`
+	Status        string           `json:"status" db:"status"` // pending, completed, failed
+	ErrorMessage  *string          `json:"errorMessage,omitempty" db:"error_message"`
+	RequestedBy   int64            `json:"requestedBy" db:"requested_by"`
+	AgreementID   *int64           `json:"agreementId,omitempty" db:"agreement_id"`
+	ConsentID     *int64           `json:"consentId,omitempty" db:"consent_id"`
+	StartedAt     time.Time        `json:"startedAt" db:"started_at"`
+	CompletedAt   *time.Time       `json:"completedAt,omitempty" db:"completed_at"`
 }
 
 // Health sector data structures (FHIR-aligned)
@@ -153,43 +154,43 @@ type EducationRecord struct {
 
 // Tax sector data structures
 type TaxRecord struct {
-	TaxpayerID       string   `json:"taxpayerId"`
-	NationalID       string   `json:"nationalId"`
-	FilingStatus     string   `json:"filingStatus"`
-	LastFilingYear   int      `json:"lastFilingYear,omitempty"`
-	DeclaredIncome   float64  `json:"declaredIncome,omitempty"`
-	TaxBracket       string   `json:"taxBracket,omitempty"`
+	TaxpayerID        string  `json:"taxpayerId"`
+	NationalID        string  `json:"nationalId"`
+	FilingStatus      string  `json:"filingStatus"`
+	LastFilingYear    int     `json:"lastFilingYear,omitempty"`
+	DeclaredIncome    float64 `json:"declaredIncome,omitempty"`
+	TaxBracket        string  `json:"taxBracket,omitempty"`
 	PropertyOwnership bool    `json:"propertyOwnership"`
 	BusinessOwnership bool    `json:"businessOwnership"`
-	FormalEmployment bool     `json:"formalEmployment"`
+	FormalEmployment  bool    `json:"formalEmployment"`
 }
 
 // Labor sector data structures
 type LaborRecord struct {
-	WorkerID           string     `json:"workerId"`
-	NationalID         string     `json:"nationalId"`
-	EmploymentStatus   string     `json:"employmentStatus"`
-	EmployerID         string     `json:"employerId,omitempty"`
-	EmployerName       string     `json:"employerName,omitempty"`
-	OccupationType     string     `json:"occupationType,omitempty"`
-	SectorOfEmployment string     `json:"sectorOfEmployment,omitempty"`
-	ContractType       string     `json:"contractType,omitempty"`
-	SocialSecurityStatus string   `json:"socialSecurityStatus,omitempty"`
+	WorkerID             string     `json:"workerId"`
+	NationalID           string     `json:"nationalId"`
+	EmploymentStatus     string     `json:"employmentStatus"`
+	EmployerID           string     `json:"employerId,omitempty"`
+	EmployerName         string     `json:"employerName,omitempty"`
+	OccupationType       string     `json:"occupationType,omitempty"`
+	SectorOfEmployment   string     `json:"sectorOfEmployment,omitempty"`
+	ContractType         string     `json:"contractType,omitempty"`
+	SocialSecurityStatus string     `json:"socialSecurityStatus,omitempty"`
 	LastContributionDate *time.Time `json:"lastContributionDate,omitempty"`
-	UnemploymentBenefits bool     `json:"unemploymentBenefits"`
+	UnemploymentBenefits bool       `json:"unemploymentBenefits"`
 }
 
 // CrossSectorProfile aggregates data from multiple sectors
 type CrossSectorProfile struct {
-	BeneficiaryID   string           `json:"beneficiaryId"`
-	NationalID      string           `json:"nationalId"`
-	Health          *HealthRecord    `json:"health,omitempty"`
-	Education       []EducationRecord `json:"education,omitempty"` // Multiple children
-	Tax             *TaxRecord       `json:"tax,omitempty"`
-	Labor           *LaborRecord     `json:"labor,omitempty"`
-	LastUpdated     time.Time        `json:"lastUpdated"`
-	DataSources     []string         `json:"dataSources"`
-	ConsentStatus   map[SectorType]ConsentStatus `json:"consentStatus"`
+	BeneficiaryID string                       `json:"beneficiaryId"`
+	NationalID    string                       `json:"nationalId"`
+	Health        *HealthRecord                `json:"health,omitempty"`
+	Education     []EducationRecord            `json:"education,omitempty"` // Multiple children
+	Tax           *TaxRecord                   `json:"tax,omitempty"`
+	Labor         *LaborRecord                 `json:"labor,omitempty"`
+	LastUpdated   time.Time                    `json:"lastUpdated"`
+	DataSources   []string                     `json:"dataSources"`
+	ConsentStatus map[SectorType]ConsentStatus `json:"consentStatus"`
 }
 
 // InteroperabilityService manages cross-sector data exchange
@@ -275,7 +276,7 @@ func (s *InteroperabilityService) CheckConsent(ctx context.Context, beneficiaryI
 	// Verify requested data types are covered by consent
 	var consentedTypes []string
 	json.Unmarshal(consent.DataTypes, &consentedTypes)
-	
+
 	for _, requested := range dataTypes {
 		found := false
 		for _, consented := range consentedTypes {
@@ -482,7 +483,7 @@ func (s *InteroperabilityService) sendSectorRequest(ctx context.Context, endpoin
 	}
 
 	url := endpoint.BaseURL + path
-	req, err := http.NewRequestWithContext(ctx, "POST", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -504,44 +505,22 @@ func (s *InteroperabilityService) sendSectorRequest(ctx context.Context, endpoin
 		req.Header.Set("X-Road-Service", authConfig["serviceId"])
 	}
 
-	// In production, this would send the actual request
-	// For now, return simulated response
-	_ = jsonData
-	return s.simulateSectorResponse(endpoint.Sector, data)
-}
-
-// simulateSectorResponse simulates a sector response
-func (s *InteroperabilityService) simulateSectorResponse(sector SectorType, request map[string]interface{}) ([]byte, error) {
-	switch sector {
-	case SectorHealth:
-		return json.Marshal(HealthRecord{
-			PatientID:       "H" + request["nationalId"].(string),
-			NationalID:      request["nationalId"].(string),
-			InsuranceStatus: "active",
-			InsuranceType:   "public",
-		})
-	case SectorEducation:
-		return json.Marshal([]EducationRecord{{
-			StudentID:        "S" + request["nationalId"].(string),
-			NationalID:       request["nationalId"].(string),
-			EnrollmentStatus: "enrolled",
-			AttendanceRate:   0.92,
-		}})
-	case SectorTax:
-		return json.Marshal(TaxRecord{
-			TaxpayerID:   "T" + request["nationalId"].(string),
-			NationalID:   request["nationalId"].(string),
-			FilingStatus: "filed",
-		})
-	case SectorLabor:
-		return json.Marshal(LaborRecord{
-			WorkerID:         "W" + request["nationalId"].(string),
-			NationalID:       request["nationalId"].(string),
-			EmploymentStatus: "employed",
-		})
-	default:
-		return nil, fmt.Errorf("unknown sector: %s", sector)
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("sector %s request failed: %w", endpoint.Sector, err)
 	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4<<20))
+	if err != nil {
+		return nil, fmt.Errorf("sector %s response read failed: %w", endpoint.Sector, err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, fmt.Errorf("sector %s returned %d: %s", endpoint.Sector, response.StatusCode, string(body))
+	}
+	if !json.Valid(body) {
+		return nil, fmt.Errorf("sector %s returned invalid JSON", endpoint.Sector)
+	}
+	return body, nil
 }
 
 // BuildCrossSectorProfile builds a comprehensive profile from multiple sectors
@@ -809,9 +788,7 @@ func ProcessBatchExchangeActivity(ctx context.Context, sourceSector SectorType, 
 	logger := activity.GetLogger(ctx)
 	logger.Info("Processing batch exchange", "source", sourceSector, "target", targetSector, "count", len(beneficiaryIDs))
 
-	// In production, this would process the batch
-	// For now, return success count
-	return len(beneficiaryIDs), nil
+	return 0, fmt.Errorf("batch exchange from %s to %s is unavailable; use audited per-beneficiary exchange", sourceSector, targetSector)
 }
 
 // Context key for interoperability service

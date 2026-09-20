@@ -1,399 +1,83 @@
 import { useParams } from "wouter";
-import { useAuth } from "@/_core/hooks/useAuth";
+import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Loader2, User, FileText, CreditCard, AlertTriangle, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 export default function BeneficiaryDetail() {
-  const { id } = useParams();
-  const { user } = useAuth();
-  
-  // Fetch beneficiary data
+  const params = useParams<{ id: string }>();
+  const beneficiaryId = Number(params.id);
+  const enabled = Number.isInteger(beneficiaryId) && beneficiaryId > 0;
   const { data: beneficiary, isLoading, refetch } = trpc.beneficiaries.getById.useQuery(
-    { id: id! },
-    { enabled: !!id }
+    { id: beneficiaryId },
+    { enabled }
   );
-  
-  const approveMutation = trpc.beneficiaries.approve.useMutation({
-    onSuccess: () => {
-      toast.success("Beneficiary approved");
-      refetch();
-    },
-  });
-  
-  const rejectMutation = trpc.beneficiaries.reject.useMutation({
-    onSuccess: () => {
-      toast.success("Beneficiary rejected");
-      refetch();
-    },
-  });
-  
-  const suspendMutation = trpc.beneficiaries.suspend.useMutation({
-    onSuccess: () => {
-      toast.success("Beneficiary suspended");
-      refetch();
-    },
-  });
-  
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-  
-  if (!beneficiary) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p>Beneficiary not found</p>
-      </div>
-    );
-  }
-  
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      active: "default",
-      pending: "secondary",
-      suspended: "destructive",
-      rejected: "outline",
-    };
-    
-    return <Badge variant={variants[status] || "outline"}>{status}</Badge>;
-  };
-  
+  const { data: enrollments = [] } = trpc.beneficiaries.getEnrollments.useQuery(
+    { beneficiaryId },
+    { enabled }
+  );
+
+  const approve = trpc.beneficiaries.approve.useMutation({ onSuccess: async () => { toast.success("Beneficiary approved"); await refetch(); } });
+  const reject = trpc.beneficiaries.reject.useMutation({ onSuccess: async () => { toast.success("Beneficiary rejected"); await refetch(); } });
+  const suspend = trpc.beneficiaries.suspend.useMutation({ onSuccess: async () => { toast.success("Beneficiary suspended"); await refetch(); } });
+
+  if (!enabled) return <DashboardLayout><p className="p-6">Invalid beneficiary identifier.</p></DashboardLayout>;
+  if (isLoading) return <DashboardLayout><div className="flex min-h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div></DashboardLayout>;
+  if (!beneficiary) return <DashboardLayout><p className="p-6">Beneficiary not found.</p></DashboardLayout>;
+
+  const status = beneficiary.enrollmentStatus;
+  const statusVariant = status === "approved" ? "default" : status === "rejected" ? "destructive" : status === "suspended" ? "secondary" : "outline";
+  const fullName = `${beneficiary.firstName} ${beneficiary.lastName}`;
+
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Avatar className="h-16 w-16">
-            <AvatarFallback>
-              <User className="h-8 w-8" />
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="text-3xl font-bold">{beneficiary.name}</h1>
-            <p className="text-muted-foreground">ID: {beneficiary.id}</p>
+    <DashboardLayout>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><h1 className="text-3xl font-bold">{fullName}</h1><p className="text-muted-foreground">Beneficiary #{beneficiary.id}</p></div>
+          <div className="flex gap-2">
+            {status === "pending" && <>
+              <Button onClick={() => approve.mutate({ id: beneficiary.id })} disabled={approve.isPending}><CheckCircle2 className="mr-2 h-4 w-4" />Approve</Button>
+              <Button variant="destructive" onClick={() => reject.mutate({ id: beneficiary.id })} disabled={reject.isPending}><XCircle className="mr-2 h-4 w-4" />Reject</Button>
+            </>}
+            {status === "approved" && <Button variant="outline" onClick={() => suspend.mutate({ id: beneficiary.id })} disabled={suspend.isPending}><AlertTriangle className="mr-2 h-4 w-4" />Suspend</Button>}
           </div>
         </div>
-        <div className="flex gap-2">
-          {beneficiary.status === "pending" && (
-            <>
-              <Button
-                onClick={() => approveMutation.mutate({ id: beneficiary.id })}
-                disabled={approveMutation.isLoading}
-              >
-                <CheckCircle2 className="mr-2 h-4 w-4" />
-                Approve
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => rejectMutation.mutate({ id: beneficiary.id })}
-                disabled={rejectMutation.isLoading}
-              >
-                <XCircle className="mr-2 h-4 w-4" />
-                Reject
-              </Button>
-            </>
-          )}
-          {beneficiary.status === "active" && (
-            <Button
-              variant="outline"
-              onClick={() => suspendMutation.mutate({ id: beneficiary.id })}
-              disabled={suspendMutation.isLoading}
-            >
-              <AlertTriangle className="mr-2 h-4 w-4" />
-              Suspend
-            </Button>
-          )}
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card><CardHeader><CardDescription>Enrollment status</CardDescription></CardHeader><CardContent><Badge variant={statusVariant}>{status}</Badge></CardContent></Card>
+          <Card><CardHeader><CardDescription>KYC status</CardDescription></CardHeader><CardContent><Badge variant="outline">{beneficiary.kycStatus.replace("_", " ")}</Badge></CardContent></Card>
+          <Card><CardHeader><CardDescription>Programme enrollments</CardDescription></CardHeader><CardContent className="text-2xl font-bold">{enrollments.length}</CardContent></Card>
         </div>
-      </div>
-      
-      {/* Overview Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Status</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {getStatusBadge(beneficiary.status)}
+          <CardHeader><CardTitle>Verified profile fields</CardTitle><CardDescription>Only fields returned by the beneficiary service are shown.</CardDescription></CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <Field label="National ID" value={beneficiary.nationalId} />
+            <Field label="Date of birth" value={new Date(beneficiary.dateOfBirth).toLocaleDateString()} />
+            <Field label="Phone" value={beneficiary.phoneNumber} />
+            <Field label="Email" value={beneficiary.email} />
+            <Field label="Address" value={[beneficiary.address, beneficiary.city, beneficiary.state, beneficiary.postalCode].filter(Boolean).join(", ")} />
+            <Field label="Enrolled" value={new Date(beneficiary.enrolledAt).toLocaleDateString()} />
           </CardContent>
         </Card>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Programs</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle>Programme enrollments</CardTitle></CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{beneficiary.programs?.length || 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Disbursed</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">${beneficiary.totalDisbursed || 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Fraud Alerts</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-destructive">{beneficiary.fraudAlerts || 0}</p>
+            <Table><TableHeader><TableRow><TableHead>Programme ID</TableHead><TableHead>Status</TableHead><TableHead>Monthly allocation</TableHead><TableHead>Enrollment date</TableHead></TableRow></TableHeader>
+              <TableBody>{enrollments.length ? enrollments.map((row) => <TableRow key={row.id}><TableCell>{row.programId}</TableCell><TableCell>{row.status}</TableCell><TableCell>{row.monthlyAllocation}</TableCell><TableCell>{new Date(row.enrollmentDate).toLocaleDateString()}</TableCell></TableRow>) : <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">No programme enrollments.</TableCell></TableRow>}</TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>
-      
-      {/* Detailed Information */}
-      <Tabs defaultValue="info" className="w-full">
-        <TabsList>
-          <TabsTrigger value="info">Personal Information</TabsTrigger>
-          <TabsTrigger value="programs">Programs & Benefits</TabsTrigger>
-          <TabsTrigger value="kyc">KYC Documents</TabsTrigger>
-          <TabsTrigger value="card">Benefit Card</TabsTrigger>
-          <TabsTrigger value="transactions">Transactions</TabsTrigger>
-          <TabsTrigger value="alerts">Fraud Alerts</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="info" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Personal Information</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div>
-                <p className="text-sm text-muted-foreground">Full Name</p>
-                <p className="font-medium">{beneficiary.name}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Email</p>
-                <p className="font-medium">{beneficiary.email || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Phone</p>
-                <p className="font-medium">{beneficiary.phone || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Date of Birth</p>
-                <p className="font-medium">{beneficiary.dateOfBirth || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Address</p>
-                <p className="font-medium">{beneficiary.address || "N/A"}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Enrollment Date</p>
-                <p className="font-medium">{new Date(beneficiary.createdAt).toLocaleDateString()}</p>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader>
-              <CardTitle>Enrollment History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {beneficiary.enrollmentHistory?.map((entry: any, index: number) => (
-                  <div key={index} className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">{entry.date}: {entry.action}</span>
-                  </div>
-                )) || <p className="text-sm text-muted-foreground">No history available</p>}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="programs">
-          <Card>
-            <CardHeader>
-              <CardTitle>Linked Programs</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Program Name</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Enrolled Date</TableHead>
-                    <TableHead>Monthly Benefit</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {beneficiary.programs?.map((program: any) => (
-                    <TableRow key={program.id}>
-                      <TableCell>{program.name}</TableCell>
-                      <TableCell>{getStatusBadge(program.status)}</TableCell>
-                      <TableCell>{new Date(program.enrolledDate).toLocaleDateString()}</TableCell>
-                      <TableCell>${program.monthlyBenefit}</TableCell>
-                    </TableRow>
-                  )) || (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        No programs linked
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="kyc">
-          <Card>
-            <CardHeader>
-              <CardTitle>KYC Documents</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2">
-                {beneficiary.kycDocuments?.map((doc: any) => (
-                  <Card key={doc.id}>
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          <CardTitle className="text-sm">{doc.type}</CardTitle>
-                        </div>
-                        {doc.verified && <CheckCircle2 className="h-4 w-4 text-green-500" />}
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-xs text-muted-foreground mb-2">Uploaded: {new Date(doc.uploadedAt).toLocaleDateString()}</p>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline">View</Button>
-                        <Button size="sm" variant="outline">Download</Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )) || <p className="text-sm text-muted-foreground">No documents uploaded</p>}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="card">
-          <Card>
-            <CardHeader>
-              <CardTitle>Benefit Card Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {beneficiary.card ? (
-                <>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Card Number</p>
-                      <p className="font-mono">**** **** **** {beneficiary.card.lastFour}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Status</p>
-                      {getStatusBadge(beneficiary.card.status)}
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Issued Date</p>
-                      <p>{new Date(beneficiary.card.issuedDate).toLocaleDateString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Expiry Date</p>
-                      <p>{new Date(beneficiary.card.expiryDate).toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline">
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Block Card
-                    </Button>
-                    <Button variant="outline">
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Reissue Card
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-8">
-                  <CreditCard className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground mb-4">No benefit card issued</p>
-                  <Button>Issue Card</Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="transactions">
-          <Card>
-            <CardHeader>
-              <CardTitle>Transaction History</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Merchant</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {beneficiary.transactions?.map((txn: any) => (
-                    <TableRow key={txn.id}>
-                      <TableCell>{new Date(txn.date).toLocaleString()}</TableCell>
-                      <TableCell>{txn.merchant}</TableCell>
-                      <TableCell>${txn.amount}</TableCell>
-                      <TableCell>{getStatusBadge(txn.status)}</TableCell>
-                    </TableRow>
-                  )) || (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
-                        No transactions found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="alerts">
-          <Card>
-            <CardHeader>
-              <CardTitle>Fraud Alerts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {beneficiary.fraudAlerts?.map((alert: any) => (
-                  <Card key={alert.id} className="border-destructive">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-destructive" />
-                          <CardTitle className="text-sm">{alert.type}</CardTitle>
-                        </div>
-                        <Badge variant="destructive">{alert.severity}</Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm mb-2">{alert.description}</p>
-                      <p className="text-xs text-muted-foreground">Detected: {new Date(alert.detectedAt).toLocaleString()}</p>
-                    </CardContent>
-                  </Card>
-                )) || <p className="text-sm text-muted-foreground">No fraud alerts</p>}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+    </DashboardLayout>
   );
+}
+
+function Field({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return <div><p className="text-sm text-muted-foreground">{label}</p><p className="font-medium">{value || "Not recorded"}</p></div>;
 }

@@ -13,12 +13,10 @@
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
   "dependencies": {
-    "@apollo/server": "^4.12.2",
     "@aws-sdk/client-s3": "^3.693.0",
     "@aws-sdk/s3-request-presigner": "^3.693.0",
     "@dapr/dapr": "^3.6.1",
     "@fluvio/client": "^0.14.9",
-    "@graphql-tools/schema": "^10.0.27",
     "@opensearch-project/opensearch": "^3.5.1",
     "@permify/permify-node": "^1.0.10",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -72,9 +70,6 @@
     "fabric-network": "^2.2.20",
     "framer-motion": "^12.23.22",
     "gantt-task-react": "^0.3.9",
-    "graphql": "^16.12.0",
-    "graphql-subscriptions": "^3.0.0",
-    "graphql-tag": "^2.12.6",
     "graphql-ws": "^6.0.6",
     "http-proxy-middleware": "^3.0.5",
     "idb": "^8.0.0",
@@ -133,15 +128,5 @@
     "vite-plugin-manus-runtime": "^0.0.56",
     "vitest": "^2.1.4"
   },
-  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
-  "pnpm": {
-    "patchedDependencies": {
-      "wouter@3.7.1": "patches/wouter@3.7.1.patch"
-    },
-    "overrides": {
-      "tailwindcss>nanoid": "3.3.7",
-      "gantt-task-react>react": "^19.1.1",
-      "gantt-task-react>react-dom": "^19.1.1"
-    }
-  }
+  "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af"
 }

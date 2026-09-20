@@ -7,20 +7,20 @@ import (
 	"math"
 	"time"
 
-	"social-protection-platform/orchestrator/middleware"
-	"social-protection-platform/orchestrator/mojaloop"
-	"social-protection-platform/orchestrator/repository"
+	"github.com/admin-portal/orchestrator/middleware"
+	"github.com/admin-portal/orchestrator/mojaloop"
+	"github.com/admin-portal/orchestrator/repository"
 
 	"go.temporal.io/sdk/activity"
 )
 
 // DisbursementActivities contains activities for the two-phase commit disbursement workflow
 type DisbursementActivities struct {
-	tbManager          *middleware.TigerBeetleManager
-	fspiop             *mojaloop.FSPIOPClient
-	callbackHandler    *mojaloop.CallbackHandler
-	settlementManager  *mojaloop.SettlementManager
-	paymentRepo        *repository.PaymentRepository
+	tbManager         *middleware.TigerBeetleManager
+	fspiop            *mojaloop.FSPIOPClient
+	callbackHandler   *mojaloop.CallbackHandler
+	settlementManager *mojaloop.SettlementManager
+	paymentRepo       *repository.PaymentRepository
 }
 
 // NewDisbursementActivities creates a new DisbursementActivities instance
@@ -210,7 +210,7 @@ func (a *DisbursementActivities) ExecuteMojaloopTransferActivity(ctx context.Con
 		if partyCallback.Error != nil {
 			errMsg := fmt.Sprintf("party lookup error: %s", partyCallback.Error.ErrorDescription)
 			_ = a.paymentRepo.UpdateActivityIdempotencyFailed(ctx, idempotencyKey, errMsg)
-			return "", fmt.Errorf(errMsg)
+			return "", fmt.Errorf("%s", errMsg)
 		}
 		party = partyCallback.Party
 	}
@@ -257,7 +257,7 @@ func (a *DisbursementActivities) ExecuteMojaloopTransferActivity(ctx context.Con
 		if quoteCallback.Error != nil {
 			errMsg := fmt.Sprintf("quote error: %s", quoteCallback.Error.ErrorDescription)
 			_ = a.paymentRepo.UpdateActivityIdempotencyFailed(ctx, idempotencyKey, errMsg)
-			return "", fmt.Errorf(errMsg)
+			return "", fmt.Errorf("%s", errMsg)
 		}
 		quoteResp = quoteCallback.Response
 	}
@@ -284,12 +284,12 @@ func (a *DisbursementActivities) ExecuteMojaloopTransferActivity(ctx context.Con
 		if transferCallback.Error != nil {
 			errMsg := fmt.Sprintf("transfer error: %s", transferCallback.Error.ErrorDescription)
 			_ = a.paymentRepo.UpdateActivityIdempotencyFailed(ctx, idempotencyKey, errMsg)
-			return "", fmt.Errorf(errMsg)
+			return "", fmt.Errorf("%s", errMsg)
 		}
 		if transferCallback.Response.TransferState != mojaloop.TransferStateCommitted {
 			errMsg := fmt.Sprintf("transfer not committed: %s", transferCallback.Response.TransferState)
 			_ = a.paymentRepo.UpdateActivityIdempotencyFailed(ctx, idempotencyKey, errMsg)
-			return "", fmt.Errorf(errMsg)
+			return "", fmt.Errorf("%s", errMsg)
 		}
 	}
 

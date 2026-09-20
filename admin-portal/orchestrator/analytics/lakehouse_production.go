@@ -41,46 +41,46 @@ type ProductionLakehouseManager struct {
 
 // EventBuffer buffers events for batch writing
 type EventBuffer struct {
-	events    []ParquetEvent
-	messages  []kafka.Message
+	events          []ParquetEvent
+	messages        []kafka.Message
 	idempotencyKeys []string
-	mu        sync.Mutex
-	flushChan chan struct{}
-	lastFlush time.Time
+	mu              sync.Mutex
+	flushChan       chan struct{}
+	lastFlush       time.Time
 }
 
 // ParquetEvent represents an event in Parquet-compatible format
 type ParquetEvent struct {
-	EventID       string  `parquet:"name=event_id, type=BYTE_ARRAY, convertedtype=UTF8"`
-	EventType     string  `parquet:"name=event_type, type=BYTE_ARRAY, convertedtype=UTF8"`
-	Timestamp     int64   `parquet:"name=timestamp, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
-	BeneficiaryID string  `parquet:"name=beneficiary_id, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	ProgramID     string  `parquet:"name=program_id, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	Amount        float64 `parquet:"name=amount, type=DOUBLE, repetitiontype=OPTIONAL"`
-	MetadataJSON  string  `parquet:"name=metadata_json, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
-	PartitionDate string  `parquet:"name=partition_date, type=BYTE_ARRAY, convertedtype=UTF8"`
-	IdempotencyKey string `parquet:"name=idempotency_key, type=BYTE_ARRAY, convertedtype=UTF8"`
+	EventID        string  `parquet:"name=event_id, type=BYTE_ARRAY, convertedtype=UTF8"`
+	EventType      string  `parquet:"name=event_type, type=BYTE_ARRAY, convertedtype=UTF8"`
+	Timestamp      int64   `parquet:"name=timestamp, type=INT64, convertedtype=TIMESTAMP_MILLIS"`
+	BeneficiaryID  string  `parquet:"name=beneficiary_id, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
+	ProgramID      string  `parquet:"name=program_id, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
+	Amount         float64 `parquet:"name=amount, type=DOUBLE, repetitiontype=OPTIONAL"`
+	MetadataJSON   string  `parquet:"name=metadata_json, type=BYTE_ARRAY, convertedtype=UTF8, repetitiontype=OPTIONAL"`
+	PartitionDate  string  `parquet:"name=partition_date, type=BYTE_ARRAY, convertedtype=UTF8"`
+	IdempotencyKey string  `parquet:"name=idempotency_key, type=BYTE_ARRAY, convertedtype=UTF8"`
 }
 
 // OffsetManager manages Kafka offsets for exactly-once semantics
 type OffsetManager struct {
-	storagePath string
-	offsets     map[string]map[int]int64 // topic -> partition -> offset
-	mu          sync.RWMutex
+	storagePath      string
+	offsets          map[string]map[int]int64 // topic -> partition -> offset
+	mu               sync.RWMutex
 	idempotencyCache map[string]bool // cache of processed idempotency keys
 	idempotencyMu    sync.RWMutex
 }
 
 // LakehouseMetrics tracks performance metrics
 type LakehouseMetrics struct {
-	EventsIngested    int64
-	EventsWritten     int64
-	EventsFailed      int64
-	BatchesWritten    int64
-	LastIngestTime    time.Time
-	LastWriteTime     time.Time
-	KafkaLag          map[string]int64
-	mu                sync.RWMutex
+	EventsIngested int64
+	EventsWritten  int64
+	EventsFailed   int64
+	BatchesWritten int64
+	LastIngestTime time.Time
+	LastWriteTime  time.Time
+	KafkaLag       map[string]int64
+	mu             sync.RWMutex
 }
 
 // NewProductionLakehouseManager creates a new production Lakehouse manager
@@ -244,11 +244,11 @@ func (lm *ProductionLakehouseManager) IngestFromKafka(topic string) error {
 	lm.mu.Lock()
 	lm.kafkaReaders[topic] = reader
 	lm.eventBuffers[topic] = &EventBuffer{
-		events:    make([]ParquetEvent, 0, lm.config.BatchSize),
-		messages:  make([]kafka.Message, 0, lm.config.BatchSize),
+		events:          make([]ParquetEvent, 0, lm.config.BatchSize),
+		messages:        make([]kafka.Message, 0, lm.config.BatchSize),
 		idempotencyKeys: make([]string, 0, lm.config.BatchSize),
-		flushChan: make(chan struct{}, 1),
-		lastFlush: time.Now(),
+		flushChan:       make(chan struct{}, 1),
+		lastFlush:       time.Now(),
 	}
 	lm.mu.Unlock()
 
@@ -320,8 +320,8 @@ func (lm *ProductionLakehouseManager) IngestFromKafka(topic string) error {
 					parquetEvent.MetadataJSON = string(metadataJSON)
 				}
 
-					// Buffer the message and acknowledge it only after Parquet persistence succeeds.
-					lm.addToBuffer(topic, parquetEvent, msg, idempotencyKey)
+				// Buffer the message and acknowledge it only after Parquet persistence succeeds.
+				lm.addToBuffer(topic, parquetEvent, msg, idempotencyKey)
 
 				lm.metrics.mu.Lock()
 				lm.metrics.EventsIngested++
@@ -427,9 +427,14 @@ func (lm *ProductionLakehouseManager) flushBuffer(topic string) {
 	}
 	if writeOK {
 		for i, msg := range messages {
-			if err := lm.kafkaReaders[topic].CommitMessages(lm.ctx, msg); err != nil { log.Printf("[Lakehouse] Kafka commit failed after durable write: %v", err); continue }
+			if err := lm.kafkaReaders[topic].CommitMessages(lm.ctx, msg); err != nil {
+				log.Printf("[Lakehouse] Kafka commit failed after durable write: %v", err)
+				continue
+			}
 			lm.offsetManager.MarkProcessed(idempotencyKeys[i])
-			if err := lm.offsetManager.CommitOffset(topic, msg.Partition, msg.Offset); err != nil { log.Printf("[Lakehouse] offset persistence failed: %v", err) }
+			if err := lm.offsetManager.CommitOffset(topic, msg.Partition, msg.Offset); err != nil {
+				log.Printf("[Lakehouse] offset persistence failed: %v", err)
+			}
 		}
 	} else {
 		// Requeue failed batches so a transient storage error cannot silently lose events.

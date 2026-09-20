@@ -19,10 +19,9 @@ import { multiTenancyRouter } from "./routers/multiTenancy";
 import { workflowRouter } from "./routers/workflow";
 import { temporalUIRouter } from "./routers/temporalUI";
 import { workflowControlRouter } from "./routers/workflowControl";
-import { slaRouter } from "./routers/sla";
-import { templatesRouter } from "./routers/templates";
 import { auditRouter } from "./routers/audit";
 import { worldClassRouter } from "./routers/worldClass";
+import { stakeholderOnboardingRouter } from "./routers/stakeholderOnboarding";
 
 // Admin-only procedure
 const adminProcedure = protectedProcedure.use(({ ctx, next }) => {
@@ -1145,6 +1144,14 @@ export const appRouter = router({
         return { success: true };
       }),
 
+    suspend: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input, ctx }) => {
+        await beneficiaryDb.suspendBeneficiary(input.id);
+        await db.logAdminAction({ action: "suspend_beneficiary", targetUserId: null, details: { beneficiaryId: input.id }, justification: "Suspended beneficiary enrollment", performedBy: ctx.user.id });
+        return { success: true };
+      }),
+
     delete: adminProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
@@ -1526,9 +1533,8 @@ export const appRouter = router({
   workflow: workflowRouter,
   temporalUI: temporalUIRouter,
   workflowControl: workflowControlRouter,
-	sla: slaRouter,
-	templates: templatesRouter,
-	audit: auditRouter,
+  audit: auditRouter,
+  stakeholderOnboarding: stakeholderOnboardingRouter,
   worldClass: worldClassRouter,
 });
 

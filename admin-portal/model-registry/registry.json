@@ -1,0 +1,73 @@
+{
+  "models": {
+    "fraud": {
+      "fraud-ml-20260920T002126Z-43-50000": {
+        "model": "fraud",
+        "version": "fraud-ml-20260920T002126Z-43-50000",
+        "stage": "staging",
+        "path": "fraud/fraud-ml-20260920T002126Z-43-50000",
+        "files": {
+          "lineage.json": "804b0ae44636ddce68df5b5b0420da01072dbc520d144a07e321d3744ebc5e43",
+          "manifest.json": "cf0b10d6deb7ba3ff441d415c618b14d79f1f6955b040154f1c54ce3c67628ad",
+          "preprocess.pt": "a352b8d679cd61d68553cb58a946ec4a2218cfe9b725ce54b878ca99b3b3796f",
+          "fraud_mlp.pt": "a0ea29ff28bb6124e7cd7560cdaded757404205621244eb0c7bcb18c9e675872"
+        },
+        "registered_at": "2026-09-20T00:44:11.523757+00:00",
+        "approval": {
+          "approver": "automated-ci",
+          "reason": "Synthetic validation only; not approved for production",
+          "at": "2026-09-20T00:44:11.576943+00:00"
+        }
+      }
+    },
+    "credit": {
+      "credit-risk-20260920T001846Z-52-30000": {
+        "model": "credit",
+        "version": "credit-risk-20260920T001846Z-52-30000",
+        "stage": "staging",
+        "path": "credit/credit-risk-20260920T001846Z-52-30000",
+        "files": {
+          "credit_mlp.pt": "1903aa8472c4054d99a4805a0c2eee2a298f6fc6b4fd4c379e4cf1c80f9c57ca",
+          "preprocess.pt": "3b96f1fbd34d0c6d309b461105774aba691c70f3cd9b06a2f28927f0ff60f79e",
+          "manifest.json": "227ce7ad36a8d8dc1dbf5ad6a0bb48052b96147e364937fe9b2cc43547f21016"
+        },
+        "registered_at": "2026-09-20T00:44:11.627311+00:00",
+        "approval": {
+          "approver": "automated-ci",
+          "reason": "Synthetic validation only; prohibited for benefit eligibility",
+          "at": "2026-09-20T00:44:11.679854+00:00"
+        }
+      }
+    },
+    "gnn": {
+      "fraud-gnn-20260920T001851Z-62-1800": {
+        "model": "gnn",
+        "version": "fraud-gnn-20260920T001851Z-62-1800",
+        "stage": "staging",
+        "path": "gnn/fraud-gnn-20260920T001851Z-62-1800",
+        "files": {
+          "graphsage_fraud.pt": "146104a009e8a136907e4a4b3723a974bf1491d0139abc51d754ea30dc93a935",
+          "graph_snapshot.pt": "982ffb3bdc5bb702616c425be726a0df1a11f2f0a26aa5dc4b44bdccc6ecf537",
+          "manifest.json": "ac8d03bdcde05f0abb9d7037169db0800463356a4e13b1dfb55f84689d6b02e3"
+        },
+        "registered_at": "2026-09-20T00:44:11.731340+00:00",
+        "approval": {
+          "approver": "automated-ci",
+          "reason": "Synthetic validation only; not approved for production",
+          "at": "2026-09-20T00:44:11.788482+00:00"
+        }
+      }
+    }
+  },
+  "stage_pointers": {
+    "fraud": {
+      "staging": "fraud-ml-20260920T002126Z-43-50000"
+    },
+    "credit": {
+      "staging": "credit-risk-20260920T001846Z-52-30000"
+    },
+    "gnn": {
+      "staging": "fraud-gnn-20260920T001851Z-62-1800"
+    }
+  }
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -19,41 +20,41 @@ import (
 // BFF: trpc.disbursements.schedule
 // Workflow: DisbursementProcessingWorkflow
 type DisbursementScheduleInput struct {
-	JourneyContext *JourneyContext `json:"journeyContext"`
-	ProgramID      string          `json:"programId"`
-	DisbursementName string        `json:"disbursementName"`
-	Amount         float64         `json:"amount"`
-	Currency       string          `json:"currency"`
-	ScheduledDate  string          `json:"scheduledDate"`
-	BeneficiaryIDs []string        `json:"beneficiaryIds,omitempty"`
-	Criteria       *DisbursementCriteria `json:"criteria,omitempty"`
+	JourneyContext   *JourneyContext       `json:"journeyContext"`
+	ProgramID        string                `json:"programId"`
+	DisbursementName string                `json:"disbursementName"`
+	Amount           float64               `json:"amount"`
+	Currency         string                `json:"currency"`
+	ScheduledDate    string                `json:"scheduledDate"`
+	BeneficiaryIDs   []string              `json:"beneficiaryIds,omitempty"`
+	Criteria         *DisbursementCriteria `json:"criteria,omitempty"`
 }
 
 type DisbursementCriteria struct {
-	Status         string   `json:"status,omitempty"`
-	Regions        []string `json:"regions,omitempty"`
-	Districts      []string `json:"districts,omitempty"`
-	PMTScoreMin    float64  `json:"pmtScoreMin,omitempty"`
-	PMTScoreMax    float64  `json:"pmtScoreMax,omitempty"`
+	Status      string   `json:"status,omitempty"`
+	Regions     []string `json:"regions,omitempty"`
+	Districts   []string `json:"districts,omitempty"`
+	PMTScoreMin float64  `json:"pmtScoreMin,omitempty"`
+	PMTScoreMax float64  `json:"pmtScoreMax,omitempty"`
 }
 
 type DisbursementScheduleResult struct {
-	JourneyRunID     string    `json:"journeyRunId"`
-	DisbursementID   string    `json:"disbursementId"`
-	ProgramID        string    `json:"programId"`
-	TotalBeneficiaries int     `json:"totalBeneficiaries"`
-	TotalAmount      float64   `json:"totalAmount"`
-	ScheduledDate    time.Time `json:"scheduledDate"`
-	Status           string    `json:"status"`
+	JourneyRunID       string    `json:"journeyRunId"`
+	DisbursementID     string    `json:"disbursementId"`
+	ProgramID          string    `json:"programId"`
+	TotalBeneficiaries int       `json:"totalBeneficiaries"`
+	TotalAmount        float64   `json:"totalAmount"`
+	ScheduledDate      time.Time `json:"scheduledDate"`
+	Status             string    `json:"status"`
 }
 
 // DisbursementScheduleJourney orchestrates scheduling a disbursement
 func DisbursementScheduleJourney(ctx workflow.Context, input DisbursementScheduleInput) (*DisbursementScheduleResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -61,27 +62,27 @@ func DisbursementScheduleJourney(ctx workflow.Context, input DisbursementSchedul
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType": "disbursement_schedule",
 		"programId":   input.ProgramID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "disbursement:create").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Validate program budget
 	var budgetValid bool
 	err = workflow.ExecuteActivity(ctx, ValidateProgramBudgetActivity, input.ProgramID, input.Amount).Get(ctx, &budgetValid)
 	if err != nil || !budgetValid {
 		return nil, fmt.Errorf("insufficient program budget")
 	}
-	
+
 	// Step 4: Get eligible beneficiaries
 	var beneficiaryIDs []string
 	if len(input.BeneficiaryIDs) > 0 {
@@ -94,36 +95,36 @@ func DisbursementScheduleJourney(ctx workflow.Context, input DisbursementSchedul
 	} else {
 		return nil, fmt.Errorf("no beneficiaries specified")
 	}
-	
+
 	if len(beneficiaryIDs) == 0 {
 		return nil, fmt.Errorf("no eligible beneficiaries found")
 	}
-	
+
 	totalAmount := input.Amount * float64(len(beneficiaryIDs))
-	
+
 	// Step 5: Create disbursement record
 	var disbursementID string
 	err = workflow.ExecuteActivity(ctx, CreateDisbursementRecordActivity, map[string]interface{}{
-		"programId":          input.ProgramID,
-		"name":               input.DisbursementName,
+		"programId":            input.ProgramID,
+		"name":                 input.DisbursementName,
 		"amountPerBeneficiary": input.Amount,
-		"currency":           input.Currency,
-		"totalAmount":        totalAmount,
-		"beneficiaryCount":   len(beneficiaryIDs),
-		"scheduledDate":      input.ScheduledDate,
-		"status":             "scheduled",
-		"createdBy":          jc.ActorID,
-		"tenantId":           jc.TenantID,
+		"currency":             input.Currency,
+		"totalAmount":          totalAmount,
+		"beneficiaryCount":     len(beneficiaryIDs),
+		"scheduledDate":        input.ScheduledDate,
+		"status":               "scheduled",
+		"createdBy":            jc.ActorID,
+		"tenantId":             jc.TenantID,
 	}).Get(ctx, &disbursementID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disbursement: %v", err)
 	}
-	
+
 	// Step 6: Create disbursement items for each beneficiary
 	for _, beneficiaryID := range beneficiaryIDs {
 		workflow.ExecuteActivity(ctx, CreateDisbursementItemActivity, disbursementID, beneficiaryID, input.Amount, input.Currency)
 	}
-	
+
 	// Step 7: Reserve budget in TigerBeetle (pending transfer)
 	var reservationID string
 	err = workflow.ExecuteActivity(ctx, CreatePendingTransferActivity, map[string]interface{}{
@@ -136,17 +137,17 @@ func DisbursementScheduleJourney(ctx workflow.Context, input DisbursementSchedul
 		// Non-fatal: reservation can be done at execution time
 		workflow.GetLogger(ctx).Warn("Failed to reserve budget", "error", err)
 	}
-	
+
 	// Step 8: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "disbursement.scheduled", map[string]interface{}{
-		"disbursementId":     disbursementID,
-		"programId":          input.ProgramID,
-		"beneficiaryCount":   len(beneficiaryIDs),
-		"totalAmount":        totalAmount,
-		"scheduledDate":      input.ScheduledDate,
-		"correlationId":      jc.CorrelationID,
+		"disbursementId":   disbursementID,
+		"programId":        input.ProgramID,
+		"beneficiaryCount": len(beneficiaryIDs),
+		"totalAmount":      totalAmount,
+		"scheduledDate":    input.ScheduledDate,
+		"correlationId":    jc.CorrelationID,
 	})
-	
+
 	// Step 9: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "disbursement_scheduled",
@@ -161,7 +162,7 @@ func DisbursementScheduleJourney(ctx workflow.Context, input DisbursementSchedul
 			"totalAmount":      totalAmount,
 		},
 	})
-	
+
 	// Step 10: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "disbursement_facts", map[string]interface{}{
 		"disbursementId":   disbursementID,
@@ -172,14 +173,14 @@ func DisbursementScheduleJourney(ctx workflow.Context, input DisbursementSchedul
 		"status":           "scheduled",
 		"tenantId":         jc.TenantID,
 	})
-	
+
 	// Step 11: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"disbursementId": disbursementID,
 	})
-	
+
 	scheduledDate, _ := time.Parse("2006-01-02", input.ScheduledDate)
-	
+
 	return &DisbursementScheduleResult{
 		JourneyRunID:       jc.JourneyRunID,
 		DisbursementID:     disbursementID,
@@ -202,14 +203,14 @@ type DisbursementExecuteInput struct {
 }
 
 type DisbursementExecuteResult struct {
-	JourneyRunID     string    `json:"journeyRunId"`
-	DisbursementID   string    `json:"disbursementId"`
-	Status           string    `json:"status"`
-	SuccessCount     int       `json:"successCount"`
-	FailedCount      int       `json:"failedCount"`
-	TotalAmount      float64   `json:"totalAmount"`
-	ExecutedAt       time.Time `json:"executedAt"`
-	FailedItems      []FailedDisbursementItem `json:"failedItems,omitempty"`
+	JourneyRunID   string                   `json:"journeyRunId"`
+	DisbursementID string                   `json:"disbursementId"`
+	Status         string                   `json:"status"`
+	SuccessCount   int                      `json:"successCount"`
+	FailedCount    int                      `json:"failedCount"`
+	TotalAmount    float64                  `json:"totalAmount"`
+	ExecutedAt     time.Time                `json:"executedAt"`
+	FailedItems    []FailedDisbursementItem `json:"failedItems,omitempty"`
 }
 
 type FailedDisbursementItem struct {
@@ -220,10 +221,10 @@ type FailedDisbursementItem struct {
 // DisbursementExecuteJourney orchestrates executing a disbursement with two-phase commit
 func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteInput) (*DisbursementExecuteResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -231,52 +232,52 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":    "disbursement_execute",
 		"disbursementId": input.DisbursementID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "disbursement:execute").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Get disbursement details
 	var disbursement map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GetDisbursementDetailsActivity, input.DisbursementID).Get(ctx, &disbursement)
 	if err != nil {
 		return nil, fmt.Errorf("disbursement not found: %v", err)
 	}
-	
+
 	status := disbursement["status"].(string)
 	if status != "scheduled" && status != "approved" {
 		return nil, fmt.Errorf("disbursement cannot be executed: status is %s", status)
 	}
-	
+
 	// Step 4: Update status to processing
 	workflow.ExecuteActivity(ctx, UpdateDisbursementStatusActivity, input.DisbursementID, "processing")
-	
+
 	// Step 5: Get disbursement items
 	var items []map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GetDisbursementItemsActivity, input.DisbursementID).Get(ctx, &items)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get disbursement items: %v", err)
 	}
-	
+
 	// Step 6: Process each item with two-phase commit
 	successCount := 0
 	failedCount := 0
 	var failedItems []FailedDisbursementItem
 	totalAmount := 0.0
-	
+
 	for _, item := range items {
 		beneficiaryID := item["beneficiaryId"].(string)
 		amount := item["amount"].(float64)
-		
+
 		// Phase 1: Create pending transfer in TigerBeetle
 		var pendingTransferID string
 		err = workflow.ExecuteActivity(ctx, CreatePendingTransferActivity, map[string]interface{}{
@@ -292,7 +293,7 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 			failedCount++
 			continue
 		}
-		
+
 		// Phase 2: Execute external payment via Mojaloop
 		var paymentResult map[string]interface{}
 		err = workflow.ExecuteActivity(ctx, ExecuteMojaloopTransferActivity, map[string]interface{}{
@@ -301,7 +302,7 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 			"pendingTransferId": pendingTransferID,
 			"correlationId":     jc.CorrelationID,
 		}).Get(ctx, &paymentResult)
-		
+
 		if err != nil {
 			// Void the pending transfer
 			workflow.ExecuteActivity(ctx, VoidPendingTransferActivity, pendingTransferID)
@@ -312,20 +313,20 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 			failedCount++
 			continue
 		}
-		
+
 		// Phase 3: Commit the pending transfer
 		err = workflow.ExecuteActivity(ctx, CommitPendingTransferActivity, pendingTransferID).Get(ctx, nil)
 		if err != nil {
 			workflow.GetLogger(ctx).Error("Failed to commit transfer", "error", err)
 		}
-		
+
 		// Update item status
 		workflow.ExecuteActivity(ctx, UpdateDisbursementItemStatusActivity, item["id"], "completed", paymentResult["transactionId"])
-		
+
 		successCount++
 		totalAmount += amount
 	}
-	
+
 	// Step 7: Update disbursement status
 	finalStatus := "completed"
 	if failedCount > 0 && successCount == 0 {
@@ -333,9 +334,9 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 	} else if failedCount > 0 {
 		finalStatus = "partial"
 	}
-	
+
 	workflow.ExecuteActivity(ctx, UpdateDisbursementStatusActivity, input.DisbursementID, finalStatus)
-	
+
 	// Step 8: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "disbursement.executed", map[string]interface{}{
 		"disbursementId": input.DisbursementID,
@@ -345,7 +346,7 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 		"totalAmount":    totalAmount,
 		"correlationId":  jc.CorrelationID,
 	})
-	
+
 	// Step 9: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "disbursement_executed",
@@ -361,7 +362,7 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 			"totalAmount":  totalAmount,
 		},
 	})
-	
+
 	// Step 10: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "disbursement_execution_facts", map[string]interface{}{
 		"disbursementId": input.DisbursementID,
@@ -372,13 +373,13 @@ func DisbursementExecuteJourney(ctx workflow.Context, input DisbursementExecuteI
 		"totalAmount":    totalAmount,
 		"tenantId":       jc.TenantID,
 	})
-	
+
 	// Step 11: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"disbursementId": input.DisbursementID,
 		"status":         finalStatus,
 	})
-	
+
 	return &DisbursementExecuteResult{
 		JourneyRunID:   jc.JourneyRunID,
 		DisbursementID: input.DisbursementID,
@@ -413,10 +414,10 @@ type RetryDisbursementResult struct {
 // RetryDisbursementJourney orchestrates retrying failed disbursement items
 func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput) (*RetryDisbursementResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 30 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -424,20 +425,20 @@ func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType":    "retry_disbursement",
 		"disbursementId": input.DisbursementID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "disbursement:retry").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Get failed items
 	var failedItems []map[string]interface{}
 	if len(input.ItemIDs) > 0 {
@@ -448,23 +449,23 @@ func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput
 	if err != nil {
 		return nil, fmt.Errorf("failed to get items: %v", err)
 	}
-	
+
 	if len(failedItems) == 0 {
 		return nil, fmt.Errorf("no failed items to retry")
 	}
-	
+
 	// Step 4: Retry each failed item
 	successCount := 0
 	failedCount := 0
-	
+
 	for _, item := range failedItems {
 		beneficiaryID := item["beneficiaryId"].(string)
 		amount := item["amount"].(float64)
 		itemID := item["id"].(string)
-		
+
 		// Update item status to retrying
 		workflow.ExecuteActivity(ctx, UpdateDisbursementItemStatusActivity, itemID, "retrying", nil)
-		
+
 		// Create pending transfer
 		var pendingTransferID string
 		err = workflow.ExecuteActivity(ctx, CreatePendingTransferActivity, map[string]interface{}{
@@ -477,7 +478,7 @@ func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput
 			failedCount++
 			continue
 		}
-		
+
 		// Execute payment
 		var paymentResult map[string]interface{}
 		err = workflow.ExecuteActivity(ctx, ExecuteMojaloopTransferActivity, map[string]interface{}{
@@ -486,27 +487,27 @@ func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput
 			"pendingTransferId": pendingTransferID,
 			"correlationId":     jc.CorrelationID,
 		}).Get(ctx, &paymentResult)
-		
+
 		if err != nil {
 			workflow.ExecuteActivity(ctx, VoidPendingTransferActivity, pendingTransferID)
 			workflow.ExecuteActivity(ctx, UpdateDisbursementItemStatusActivity, itemID, "failed", nil)
 			failedCount++
 			continue
 		}
-		
+
 		// Commit transfer
 		workflow.ExecuteActivity(ctx, CommitPendingTransferActivity, pendingTransferID)
 		workflow.ExecuteActivity(ctx, UpdateDisbursementItemStatusActivity, itemID, "completed", paymentResult["transactionId"])
 		successCount++
 	}
-	
+
 	// Step 5: Update disbursement status if all items now completed
 	var remainingFailed int
 	workflow.ExecuteActivity(ctx, CountFailedDisbursementItemsActivity, input.DisbursementID).Get(ctx, &remainingFailed)
 	if remainingFailed == 0 {
 		workflow.ExecuteActivity(ctx, UpdateDisbursementStatusActivity, input.DisbursementID, "completed")
 	}
-	
+
 	// Step 6: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "disbursement.retried", map[string]interface{}{
 		"disbursementId": input.DisbursementID,
@@ -515,7 +516,7 @@ func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput
 		"failedCount":    failedCount,
 		"correlationId":  jc.CorrelationID,
 	})
-	
+
 	// Step 7: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "disbursement_retried",
@@ -530,13 +531,13 @@ func RetryDisbursementJourney(ctx workflow.Context, input RetryDisbursementInput
 			"failedCount":  failedCount,
 		},
 	})
-	
+
 	// Step 8: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"disbursementId": input.DisbursementID,
 		"successCount":   successCount,
 	})
-	
+
 	return &RetryDisbursementResult{
 		JourneyRunID:   jc.JourneyRunID,
 		DisbursementID: input.DisbursementID,
@@ -559,23 +560,23 @@ type ReconciliationInput struct {
 }
 
 type ReconciliationResult struct {
-	JourneyRunID       string    `json:"journeyRunId"`
-	ReconciliationID   string    `json:"reconciliationId"`
-	TotalTransactions  int       `json:"totalTransactions"`
-	MatchedCount       int       `json:"matchedCount"`
-	MismatchedCount    int       `json:"mismatchedCount"`
-	UnreconciledCount  int       `json:"unreconciledCount"`
-	TotalAmount        float64   `json:"totalAmount"`
-	ReconciledAt       time.Time `json:"reconciledAt"`
+	JourneyRunID      string    `json:"journeyRunId"`
+	ReconciliationID  string    `json:"reconciliationId"`
+	TotalTransactions int       `json:"totalTransactions"`
+	MatchedCount      int       `json:"matchedCount"`
+	MismatchedCount   int       `json:"mismatchedCount"`
+	UnreconciledCount int       `json:"unreconciledCount"`
+	TotalAmount       float64   `json:"totalAmount"`
+	ReconciledAt      time.Time `json:"reconciledAt"`
 }
 
 // ReconciliationJourney orchestrates payment reconciliation
 func ReconciliationJourney(ctx workflow.Context, input ReconciliationInput) (*ReconciliationResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 60 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -583,21 +584,21 @@ func ReconciliationJourney(ctx workflow.Context, input ReconciliationInput) (*Re
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType": "reconciliation",
 		"startDate":   input.StartDate,
 		"endDate":     input.EndDate,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "reconciliation:run").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Create reconciliation record
 	var reconciliationID string
 	err = workflow.ExecuteActivity(ctx, CreateReconciliationRecordActivity, map[string]interface{}{
@@ -611,43 +612,43 @@ func ReconciliationJourney(ctx workflow.Context, input ReconciliationInput) (*Re
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reconciliation: %v", err)
 	}
-	
+
 	// Step 4: Get internal transactions from TigerBeetle
 	var internalTxns []map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GetTigerBeetleTransactionsActivity, input.StartDate, input.EndDate, input.ProgramID).Get(ctx, &internalTxns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get internal transactions: %v", err)
 	}
-	
+
 	// Step 5: Get external transactions from Mojaloop/bank
 	var externalTxns []map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GetExternalTransactionsActivity, input.StartDate, input.EndDate).Get(ctx, &externalTxns)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get external transactions: %v", err)
 	}
-	
+
 	// Step 6: Match transactions
 	var matchResult map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, MatchTransactionsActivity, internalTxns, externalTxns).Get(ctx, &matchResult)
 	if err != nil {
 		return nil, fmt.Errorf("failed to match transactions: %v", err)
 	}
-	
+
 	matchedCount := int(matchResult["matchedCount"].(float64))
 	mismatchedCount := int(matchResult["mismatchedCount"].(float64))
 	unreconciledCount := int(matchResult["unreconciledCount"].(float64))
 	totalAmount := matchResult["totalAmount"].(float64)
-	
+
 	// Step 7: Store reconciliation results
 	workflow.ExecuteActivity(ctx, StoreReconciliationResultsActivity, reconciliationID, matchResult)
-	
+
 	// Step 8: Update reconciliation status
 	status := "completed"
 	if mismatchedCount > 0 || unreconciledCount > 0 {
 		status = "requires_review"
 	}
 	workflow.ExecuteActivity(ctx, UpdateReconciliationStatusActivity, reconciliationID, status)
-	
+
 	// Step 9: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "reconciliation.completed", map[string]interface{}{
 		"reconciliationId":  reconciliationID,
@@ -656,7 +657,7 @@ func ReconciliationJourney(ctx workflow.Context, input ReconciliationInput) (*Re
 		"unreconciledCount": unreconciledCount,
 		"correlationId":     jc.CorrelationID,
 	})
-	
+
 	// Step 10: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "reconciliation_completed",
@@ -673,26 +674,26 @@ func ReconciliationJourney(ctx workflow.Context, input ReconciliationInput) (*Re
 			"unreconciledCount": unreconciledCount,
 		},
 	})
-	
+
 	// Step 11: Write to lakehouse
 	workflow.ExecuteActivity(ctx, WriteLakehouseFactActivity, "reconciliation_facts", map[string]interface{}{
-		"reconciliationId":  reconciliationID,
+		"reconciliationId":   reconciliationID,
 		"reconciliationDate": time.Now().Format("2006-01-02"),
-		"startDate":         input.StartDate,
-		"endDate":           input.EndDate,
-		"matchedCount":      matchedCount,
-		"mismatchedCount":   mismatchedCount,
-		"unreconciledCount": unreconciledCount,
-		"totalAmount":       totalAmount,
-		"tenantId":          jc.TenantID,
+		"startDate":          input.StartDate,
+		"endDate":            input.EndDate,
+		"matchedCount":       matchedCount,
+		"mismatchedCount":    mismatchedCount,
+		"unreconciledCount":  unreconciledCount,
+		"totalAmount":        totalAmount,
+		"tenantId":           jc.TenantID,
 	})
-	
+
 	// Step 12: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"reconciliationId": reconciliationID,
 		"status":           status,
 	})
-	
+
 	return &ReconciliationResult{
 		JourneyRunID:      jc.JourneyRunID,
 		ReconciliationID:  reconciliationID,
@@ -727,10 +728,10 @@ type DisputeResolutionResult struct {
 // DisputeResolutionJourney orchestrates resolving a payment dispute
 func DisputeResolutionJourney(ctx workflow.Context, input DisputeResolutionInput) (*DisputeResolutionResult, error) {
 	jc := input.JourneyContext
-	
+
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &workflow.RetryPolicy{
+		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 2.0,
 			MaximumInterval:    time.Minute,
@@ -738,27 +739,27 @@ func DisputeResolutionJourney(ctx workflow.Context, input DisputeResolutionInput
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	
+
 	// Step 1: Emit journey started event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.started", map[string]interface{}{
 		"journeyType": "dispute_resolution",
 		"disputeId":   input.DisputeID,
 	})
-	
+
 	// Step 2: Check authorization
 	var authorized bool
 	err := workflow.ExecuteActivity(ctx, CheckAuthorizationActivity, jc, "dispute:resolve").Get(ctx, &authorized)
 	if err != nil || !authorized {
 		return nil, fmt.Errorf("authorization failed")
 	}
-	
+
 	// Step 3: Get dispute details
 	var dispute map[string]interface{}
 	err = workflow.ExecuteActivity(ctx, GetDisputeDetailsActivity, input.DisputeID).Get(ctx, &dispute)
 	if err != nil {
 		return nil, fmt.Errorf("dispute not found: %v", err)
 	}
-	
+
 	// Step 4: Apply resolution
 	switch input.Resolution {
 	case "accept_internal":
@@ -776,17 +777,17 @@ func DisputeResolutionJourney(ctx workflow.Context, input DisputeResolutionInput
 			"reason":    input.Notes,
 		})
 	}
-	
+
 	// Step 5: Update dispute status
 	workflow.ExecuteActivity(ctx, UpdateDisputeStatusActivity, input.DisputeID, "resolved", input.Resolution, input.Notes)
-	
+
 	// Step 6: Publish Kafka event
 	workflow.ExecuteActivity(ctx, PublishKafkaEventActivity, "dispute.resolved", map[string]interface{}{
 		"disputeId":     input.DisputeID,
 		"resolution":    input.Resolution,
 		"correlationId": jc.CorrelationID,
 	})
-	
+
 	// Step 7: Create audit log
 	workflow.ExecuteActivity(ctx, CreateAuditLogActivity, map[string]interface{}{
 		"action":        "dispute_resolved",
@@ -801,13 +802,13 @@ func DisputeResolutionJourney(ctx workflow.Context, input DisputeResolutionInput
 			"notes":            input.Notes,
 		},
 	})
-	
+
 	// Step 8: Emit journey completed event
 	workflow.ExecuteActivity(ctx, EmitJourneyEventActivity, jc, "journey.completed", map[string]interface{}{
 		"disputeId":  input.DisputeID,
 		"resolution": input.Resolution,
 	})
-	
+
 	return &DisputeResolutionResult{
 		JourneyRunID: jc.JourneyRunID,
 		DisputeID:    input.DisputeID,
@@ -819,59 +820,59 @@ func DisputeResolutionJourney(ctx workflow.Context, input DisputeResolutionInput
 // RegisterPaymentJourneys registers all payment journey definitions
 func RegisterPaymentJourneys(registry *JourneyRegistry) {
 	registry.Register(&JourneyDefinition{
-		Key:          "disbursement_schedule",
-		Name:         "Disbursement Scheduling",
-		Description:  "Schedule a disbursement for a program cohort",
-		Category:     "payments",
-		WorkflowType: "DisbursementScheduleJourney",
+		Key:                 "disbursement_schedule",
+		Name:                "Disbursement Scheduling",
+		Description:         "Schedule a disbursement for a program cohort",
+		Category:            "payments",
+		WorkflowType:        "DisbursementScheduleJourney",
 		RequiredPermissions: []string{"disbursement:create"},
 		UIEntryPoints:       []string{"Admin:DisbursementsPage"},
 		BFFEndpoints:        []string{"trpc.disbursements.schedule"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "tigerbeetle", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "disbursement_execute",
-		Name:         "Disbursement Execution",
-		Description:  "Execute a scheduled disbursement with two-phase commit",
-		Category:     "payments",
-		WorkflowType: "DisbursementExecuteJourney",
+		Key:                 "disbursement_execute",
+		Name:                "Disbursement Execution",
+		Description:         "Execute a scheduled disbursement with two-phase commit",
+		Category:            "payments",
+		WorkflowType:        "DisbursementExecuteJourney",
 		RequiredPermissions: []string{"disbursement:execute"},
 		UIEntryPoints:       []string{"Admin:DisbursementsPage"},
 		BFFEndpoints:        []string{"trpc.disbursements.execute"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "tigerbeetle", "mojaloop", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "retry_disbursement",
-		Name:         "Retry Failed Disbursements",
-		Description:  "Retry failed disbursement items",
-		Category:     "payments",
-		WorkflowType: "RetryDisbursementJourney",
+		Key:                 "retry_disbursement",
+		Name:                "Retry Failed Disbursements",
+		Description:         "Retry failed disbursement items",
+		Category:            "payments",
+		WorkflowType:        "RetryDisbursementJourney",
 		RequiredPermissions: []string{"disbursement:retry"},
 		UIEntryPoints:       []string{"Admin:DisbursementsPage"},
 		BFFEndpoints:        []string{"trpc.disbursements.retry"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "tigerbeetle", "mojaloop"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "reconciliation",
-		Name:         "Payments Reconciliation",
-		Description:  "Reconcile internal ledger with external payment records",
-		Category:     "payments",
-		WorkflowType: "ReconciliationJourney",
+		Key:                 "reconciliation",
+		Name:                "Payments Reconciliation",
+		Description:         "Reconcile internal ledger with external payment records",
+		Category:            "payments",
+		WorkflowType:        "ReconciliationJourney",
 		RequiredPermissions: []string{"reconciliation:run"},
 		UIEntryPoints:       []string{"Admin:ReportsPage"},
 		BFFEndpoints:        []string{"trpc.disbursements.reconcile"},
 		MiddlewareHooks:     []string{"kafka", "redis", "permify", "tigerbeetle", "mojaloop", "lakehouse"},
 	})
-	
+
 	registry.Register(&JourneyDefinition{
-		Key:          "dispute_resolution",
-		Name:         "Dispute Resolution",
-		Description:  "Resolve payment disputes from reconciliation",
-		Category:     "payments",
-		WorkflowType: "DisputeResolutionJourney",
+		Key:                 "dispute_resolution",
+		Name:                "Dispute Resolution",
+		Description:         "Resolve payment disputes from reconciliation",
+		Category:            "payments",
+		WorkflowType:        "DisputeResolutionJourney",
 		RequiredPermissions: []string{"dispute:resolve"},
 		UIEntryPoints:       []string{"Admin:ReconciliationDetailPage"},
 		BFFEndpoints:        []string{"trpc.disbursements.resolveDispute"},

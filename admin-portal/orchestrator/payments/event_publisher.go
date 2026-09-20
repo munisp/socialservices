@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"social-protection-platform/orchestrator/clients"
-	"social-protection-platform/orchestrator/repository"
+	"github.com/admin-portal/orchestrator/clients"
+	"github.com/admin-portal/orchestrator/repository"
 
 	"github.com/google/uuid"
 )
@@ -23,9 +23,9 @@ const (
 	EventPaymentFailed    PaymentEventType = "payment.failed"
 
 	// Mojaloop events
-	EventQuoteRequested   PaymentEventType = "mojaloop.quote.requested"
-	EventQuoteReceived    PaymentEventType = "mojaloop.quote.received"
-	EventQuoteFailed      PaymentEventType = "mojaloop.quote.failed"
+	EventQuoteRequested    PaymentEventType = "mojaloop.quote.requested"
+	EventQuoteReceived     PaymentEventType = "mojaloop.quote.received"
+	EventQuoteFailed       PaymentEventType = "mojaloop.quote.failed"
 	EventTransferInitiated PaymentEventType = "mojaloop.transfer.initiated"
 	EventTransferCommitted PaymentEventType = "mojaloop.transfer.committed"
 	EventTransferAborted   PaymentEventType = "mojaloop.transfer.aborted"
@@ -39,10 +39,10 @@ const (
 
 // PaymentEvent represents a payment lifecycle event
 type PaymentEvent struct {
-	EventID       string           `json:"eventId"`
-	EventType     PaymentEventType `json:"eventType"`
-	Timestamp     time.Time        `json:"timestamp"`
-	CorrelationID string           `json:"correlationId,omitempty"`
+	EventID       string             `json:"eventId"`
+	EventType     PaymentEventType   `json:"eventType"`
+	Timestamp     time.Time          `json:"timestamp"`
+	CorrelationID string             `json:"correlationId,omitempty"`
 	PaymentIntent *PaymentIntentData `json:"paymentIntent,omitempty"`
 	TigerBeetle   *TigerBeetleData   `json:"tigerBeetle,omitempty"`
 	Mojaloop      *MojaloopData      `json:"mojaloop,omitempty"`

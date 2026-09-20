@@ -46,9 +46,16 @@ services:
 
   # Ray Service
   ray-service:
-    build: ./python-services/ray-service
+    build:
+      context: .
+      dockerfile: python-services/ray-service/Dockerfile
     ports:
       - "5005:5005"
+    environment:
+      - RAY_ADDRESS=local
+    volumes:
+      - ./data:/data:ro
+      - ./model-registry:/registry
     networks:
       - lakehouse
 

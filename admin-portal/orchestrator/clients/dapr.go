@@ -2,6 +2,7 @@ package clients
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	dapr "github.com/dapr/go-sdk/client"
@@ -21,8 +22,13 @@ func NewDaprClient() (*DaprClient, error) {
 }
 
 func (d *DaprClient) InvokeService(ctx context.Context, appID, method string, data interface{}) ([]byte, error) {
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal service request: %w", err)
+	}
+
 	content := &dapr.DataContent{
-		Data:        data,
+		Data:        payload,
 		ContentType: "application/json",
 	}
 
@@ -42,7 +48,11 @@ func (d *DaprClient) PublishEvent(ctx context.Context, pubsubName, topic string,
 }
 
 func (d *DaprClient) SaveState(ctx context.Context, storeName, key string, value interface{}) error {
-	if err := d.client.SaveState(ctx, storeName, key, value, nil); err != nil {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal state value: %w", err)
+	}
+	if err := d.client.SaveState(ctx, storeName, key, payload, nil); err != nil {
 		return fmt.Errorf("failed to save state: %w", err)
 	}
 	return nil

@@ -56,54 +56,54 @@ const (
 
 // LoadTestConfig represents load test configuration
 type LoadTestConfig struct {
-	ID                string            `json:"id"`
-	Name              string            `json:"name"`
-	Description       string            `json:"description"`
-	TestType          TestType          `json:"testType"`
-	Scenarios         []TestScenario    `json:"scenarios"`
-	ScaleLevel        ScaleLevel        `json:"scaleLevel"`
-	Duration          time.Duration     `json:"duration"`
-	RampUpTime        time.Duration     `json:"rampUpTime"`
-	RampDownTime      time.Duration     `json:"rampDownTime"`
-	TargetRPS         int               `json:"targetRps"`         // Requests per second
-	MaxConcurrency    int               `json:"maxConcurrency"`    // Max concurrent users
-	ThinkTime         time.Duration     `json:"thinkTime"`         // Time between requests
-	DataSetSize       int64             `json:"dataSetSize"`       // Number of records to test with
-	TargetEndpoints   []string          `json:"targetEndpoints"`
-	Headers           map[string]string `json:"headers,omitempty"`
-	SLOs              *SLOConfig        `json:"slos"`
-	Tags              map[string]string `json:"tags,omitempty"`
+	ID              string            `json:"id"`
+	Name            string            `json:"name"`
+	Description     string            `json:"description"`
+	TestType        TestType          `json:"testType"`
+	Scenarios       []TestScenario    `json:"scenarios"`
+	ScaleLevel      ScaleLevel        `json:"scaleLevel"`
+	Duration        time.Duration     `json:"duration"`
+	RampUpTime      time.Duration     `json:"rampUpTime"`
+	RampDownTime    time.Duration     `json:"rampDownTime"`
+	TargetRPS       int               `json:"targetRps"`      // Requests per second
+	MaxConcurrency  int               `json:"maxConcurrency"` // Max concurrent users
+	ThinkTime       time.Duration     `json:"thinkTime"`      // Time between requests
+	DataSetSize     int64             `json:"dataSetSize"`    // Number of records to test with
+	TargetEndpoints []string          `json:"targetEndpoints"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	SLOs            *SLOConfig        `json:"slos"`
+	Tags            map[string]string `json:"tags,omitempty"`
 }
 
 // SLOConfig represents Service Level Objectives
 type SLOConfig struct {
-	P50LatencyMs     int     `json:"p50LatencyMs"`
-	P95LatencyMs     int     `json:"p95LatencyMs"`
-	P99LatencyMs     int     `json:"p99LatencyMs"`
-	MaxLatencyMs     int     `json:"maxLatencyMs"`
-	ErrorRatePercent float64 `json:"errorRatePercent"`
+	P50LatencyMs        int     `json:"p50LatencyMs"`
+	P95LatencyMs        int     `json:"p95LatencyMs"`
+	P99LatencyMs        int     `json:"p99LatencyMs"`
+	MaxLatencyMs        int     `json:"maxLatencyMs"`
+	ErrorRatePercent    float64 `json:"errorRatePercent"`
 	AvailabilityPercent float64 `json:"availabilityPercent"`
-	ThroughputRPS    int     `json:"throughputRps"`
+	ThroughputRPS       int     `json:"throughputRps"`
 }
 
 // LoadTestResult represents load test results
 type LoadTestResult struct {
-	ID                string                 `json:"id"`
-	ConfigID          string                 `json:"configId"`
-	Status            string                 `json:"status"` // running, completed, failed, cancelled
-	StartTime         time.Time              `json:"startTime"`
-	EndTime           *time.Time             `json:"endTime,omitempty"`
-	Duration          time.Duration          `json:"duration"`
-	TotalRequests     int64                  `json:"totalRequests"`
-	SuccessfulRequests int64                 `json:"successfulRequests"`
-	FailedRequests    int64                  `json:"failedRequests"`
-	ErrorRate         float64                `json:"errorRate"`
-	ThroughputRPS     float64                `json:"throughputRps"`
-	Latencies         *LatencyStats          `json:"latencies"`
-	ScenarioResults   map[TestScenario]*ScenarioResult `json:"scenarioResults"`
-	SLOResults        *SLOResults            `json:"sloResults"`
-	ResourceMetrics   *ResourceMetrics       `json:"resourceMetrics,omitempty"`
-	Errors            []TestError            `json:"errors,omitempty"`
+	ID                 string                           `json:"id"`
+	ConfigID           string                           `json:"configId"`
+	Status             string                           `json:"status"` // running, completed, failed, cancelled
+	StartTime          time.Time                        `json:"startTime"`
+	EndTime            *time.Time                       `json:"endTime,omitempty"`
+	Duration           time.Duration                    `json:"duration"`
+	TotalRequests      int64                            `json:"totalRequests"`
+	SuccessfulRequests int64                            `json:"successfulRequests"`
+	FailedRequests     int64                            `json:"failedRequests"`
+	ErrorRate          float64                          `json:"errorRate"`
+	ThroughputRPS      float64                          `json:"throughputRps"`
+	Latencies          *LatencyStats                    `json:"latencies"`
+	ScenarioResults    map[TestScenario]*ScenarioResult `json:"scenarioResults"`
+	SLOResults         *SLOResults                      `json:"sloResults"`
+	ResourceMetrics    *ResourceMetrics                 `json:"resourceMetrics,omitempty"`
+	Errors             []TestError                      `json:"errors,omitempty"`
 }
 
 // LatencyStats represents latency statistics
@@ -122,13 +122,13 @@ type LatencyStats struct {
 
 // ScenarioResult represents results for a specific scenario
 type ScenarioResult struct {
-	Scenario          TestScenario  `json:"scenario"`
-	TotalRequests     int64         `json:"totalRequests"`
-	SuccessfulRequests int64        `json:"successfulRequests"`
-	FailedRequests    int64         `json:"failedRequests"`
-	ErrorRate         float64       `json:"errorRate"`
-	ThroughputRPS     float64       `json:"throughputRps"`
-	Latencies         *LatencyStats `json:"latencies"`
+	Scenario           TestScenario  `json:"scenario"`
+	TotalRequests      int64         `json:"totalRequests"`
+	SuccessfulRequests int64         `json:"successfulRequests"`
+	FailedRequests     int64         `json:"failedRequests"`
+	ErrorRate          float64       `json:"errorRate"`
+	ThroughputRPS      float64       `json:"throughputRps"`
+	Latencies          *LatencyStats `json:"latencies"`
 }
 
 // SLOResults represents SLO compliance results
@@ -157,13 +157,13 @@ type ResourceMetrics struct {
 
 // TestError represents an error during testing
 type TestError struct {
-	Timestamp   time.Time `json:"timestamp"`
-	Scenario    TestScenario `json:"scenario"`
-	Endpoint    string    `json:"endpoint"`
-	StatusCode  int       `json:"statusCode"`
-	ErrorType   string    `json:"errorType"`
-	Message     string    `json:"message"`
-	RequestID   string    `json:"requestId,omitempty"`
+	Timestamp  time.Time    `json:"timestamp"`
+	Scenario   TestScenario `json:"scenario"`
+	Endpoint   string       `json:"endpoint"`
+	StatusCode int          `json:"statusCode"`
+	ErrorType  string       `json:"errorType"`
+	Message    string       `json:"message"`
+	RequestID  string       `json:"requestId,omitempty"`
 }
 
 // DataGenerator generates test data at scale
@@ -350,15 +350,15 @@ func (g *DataGenerator) GenerateTransactions(ctx context.Context, count int64, p
 
 // LoadTestRunner executes load tests
 type LoadTestRunner struct {
-	db          *sql.DB
-	httpClient  *http.Client
-	config      *LoadTestConfig
-	result      *LoadTestResult
-	latencies   []time.Duration
-	errors      []TestError
-	mu          sync.Mutex
-	stopChan    chan struct{}
-	wg          sync.WaitGroup
+	db           *sql.DB
+	httpClient   *http.Client
+	config       *LoadTestConfig
+	result       *LoadTestResult
+	latencies    []time.Duration
+	errors       []TestError
+	mu           sync.Mutex
+	stopChan     chan struct{}
+	wg           sync.WaitGroup
 	requestCount int64
 	successCount int64
 	failCount    int64
@@ -450,15 +450,15 @@ func (r *LoadTestRunner) calculateWorkers() int {
 	}
 }
 
-// rampUp gradually increases load
-func (r *LoadTestRunner) rampUp(ctx context.Context, targetWorkers int) {
+// rampUp gradually increases load.
+// Worker scheduling is intentionally simulated here; Run starts the workers.
+func (r *LoadTestRunner) rampUp(ctx context.Context, _ int) {
 	if r.config.RampUpTime == 0 {
 		return
 	}
 
 	steps := 10
 	stepDuration := r.config.RampUpTime / time.Duration(steps)
-	workersPerStep := targetWorkers / steps
 
 	for i := 1; i <= steps; i++ {
 		select {
@@ -705,7 +705,7 @@ func (r *LoadTestRunner) calculateLatencyStats() *LatencyStats {
 	// Sort latencies for percentile calculation
 	sorted := make([]time.Duration, len(r.latencies))
 	copy(sorted, r.latencies)
-	
+
 	// Simple bubble sort for small datasets, use sort package for large
 	for i := 0; i < len(sorted)-1; i++ {
 		for j := 0; j < len(sorted)-i-1; j++ {
@@ -752,12 +752,12 @@ func (r *LoadTestRunner) checkSLOCompliance() *SLOResults {
 	latencies := r.result.Latencies
 
 	results := &SLOResults{
-		P50Met:          latencies.P50.Milliseconds() <= int64(slos.P50LatencyMs),
-		P95Met:          latencies.P95.Milliseconds() <= int64(slos.P95LatencyMs),
-		P99Met:          latencies.P99.Milliseconds() <= int64(slos.P99LatencyMs),
-		MaxLatencyMet:   latencies.Max.Milliseconds() <= int64(slos.MaxLatencyMs),
-		ErrorRateMet:    r.result.ErrorRate <= slos.ErrorRatePercent,
-		ThroughputMet:   r.result.ThroughputRPS >= float64(slos.ThroughputRPS),
+		P50Met:        latencies.P50.Milliseconds() <= int64(slos.P50LatencyMs),
+		P95Met:        latencies.P95.Milliseconds() <= int64(slos.P95LatencyMs),
+		P99Met:        latencies.P99.Milliseconds() <= int64(slos.P99LatencyMs),
+		MaxLatencyMet: latencies.Max.Milliseconds() <= int64(slos.MaxLatencyMs),
+		ErrorRateMet:  r.result.ErrorRate <= slos.ErrorRatePercent,
+		ThroughputMet: r.result.ThroughputRPS >= float64(slos.ThroughputRPS),
 	}
 
 	// Calculate availability
@@ -793,9 +793,9 @@ func (r *LoadTestRunner) Stop() {
 
 // LoadTestWorkflowInput is the input for load test workflow
 type LoadTestWorkflowInput struct {
-	Config        *LoadTestConfig `json:"config"`
-	GenerateData  bool            `json:"generateData"`
-	DataPrefix    string          `json:"dataPrefix"`
+	Config       *LoadTestConfig `json:"config"`
+	GenerateData bool            `json:"generateData"`
+	DataPrefix   string          `json:"dataPrefix"`
 }
 
 // LoadTestWorkflow orchestrates load testing
@@ -1053,13 +1053,13 @@ func GetScalePresets() map[ScaleLevel]*LoadTestConfig {
 			MaxConcurrency: 10,
 			DataSetSize:    10000,
 			SLOs: &SLOConfig{
-				P50LatencyMs:     100,
-				P95LatencyMs:     500,
-				P99LatencyMs:     1000,
-				MaxLatencyMs:     5000,
-				ErrorRatePercent: 1,
+				P50LatencyMs:        100,
+				P95LatencyMs:        500,
+				P99LatencyMs:        1000,
+				MaxLatencyMs:        5000,
+				ErrorRatePercent:    1,
 				AvailabilityPercent: 99.9,
-				ThroughputRPS:    50,
+				ThroughputRPS:       50,
 			},
 		},
 		ScaleMedium: {
@@ -1071,13 +1071,13 @@ func GetScalePresets() map[ScaleLevel]*LoadTestConfig {
 			MaxConcurrency: 50,
 			DataSetSize:    100000,
 			SLOs: &SLOConfig{
-				P50LatencyMs:     150,
-				P95LatencyMs:     750,
-				P99LatencyMs:     1500,
-				MaxLatencyMs:     10000,
-				ErrorRatePercent: 1,
+				P50LatencyMs:        150,
+				P95LatencyMs:        750,
+				P99LatencyMs:        1500,
+				MaxLatencyMs:        10000,
+				ErrorRatePercent:    1,
 				AvailabilityPercent: 99.9,
-				ThroughputRPS:    250,
+				ThroughputRPS:       250,
 			},
 		},
 		ScaleLarge: {
@@ -1089,13 +1089,13 @@ func GetScalePresets() map[ScaleLevel]*LoadTestConfig {
 			MaxConcurrency: 200,
 			DataSetSize:    1000000,
 			SLOs: &SLOConfig{
-				P50LatencyMs:     200,
-				P95LatencyMs:     1000,
-				P99LatencyMs:     2000,
-				MaxLatencyMs:     15000,
-				ErrorRatePercent: 1,
+				P50LatencyMs:        200,
+				P95LatencyMs:        1000,
+				P99LatencyMs:        2000,
+				MaxLatencyMs:        15000,
+				ErrorRatePercent:    1,
 				AvailabilityPercent: 99.9,
-				ThroughputRPS:    1000,
+				ThroughputRPS:       1000,
 			},
 		},
 		ScaleXLarge: {
@@ -1107,13 +1107,13 @@ func GetScalePresets() map[ScaleLevel]*LoadTestConfig {
 			MaxConcurrency: 1000,
 			DataSetSize:    10000000,
 			SLOs: &SLOConfig{
-				P50LatencyMs:     250,
-				P95LatencyMs:     1500,
-				P99LatencyMs:     3000,
-				MaxLatencyMs:     20000,
-				ErrorRatePercent: 1,
+				P50LatencyMs:        250,
+				P95LatencyMs:        1500,
+				P99LatencyMs:        3000,
+				MaxLatencyMs:        20000,
+				ErrorRatePercent:    1,
 				AvailabilityPercent: 99.9,
-				ThroughputRPS:    5000,
+				ThroughputRPS:       5000,
 			},
 		},
 		ScaleCountry: {
@@ -1125,13 +1125,13 @@ func GetScalePresets() map[ScaleLevel]*LoadTestConfig {
 			MaxConcurrency: 5000,
 			DataSetSize:    100000000,
 			SLOs: &SLOConfig{
-				P50LatencyMs:     300,
-				P95LatencyMs:     2000,
-				P99LatencyMs:     5000,
-				MaxLatencyMs:     30000,
-				ErrorRatePercent: 1,
+				P50LatencyMs:        300,
+				P95LatencyMs:        2000,
+				P99LatencyMs:        5000,
+				MaxLatencyMs:        30000,
+				ErrorRatePercent:    1,
 				AvailabilityPercent: 99.9,
-				ThroughputRPS:    25000,
+				ThroughputRPS:       25000,
 			},
 		},
 	}

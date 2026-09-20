@@ -15,14 +15,14 @@ import (
 
 // RetentionPolicy defines data retention rules for different data types
 type RetentionPolicy struct {
-	DataType        string        `json:"dataType"`
-	HotRetention    time.Duration `json:"hotRetention"`    // Keep in primary storage
-	WarmRetention   time.Duration `json:"warmRetention"`   // Move to warm storage
-	ColdRetention   time.Duration `json:"coldRetention"`   // Move to cold/archive storage
-	DeleteAfter     time.Duration `json:"deleteAfter"`     // Permanently delete
-	ComplianceHold  bool          `json:"complianceHold"`  // Legal/compliance hold
-	PIIHandling     string        `json:"piiHandling"`     // anonymize, pseudonymize, delete
-	AuditRequired   bool          `json:"auditRequired"`   // Require audit log for operations
+	DataType       string        `json:"dataType"`
+	HotRetention   time.Duration `json:"hotRetention"`   // Keep in primary storage
+	WarmRetention  time.Duration `json:"warmRetention"`  // Move to warm storage
+	ColdRetention  time.Duration `json:"coldRetention"`  // Move to cold/archive storage
+	DeleteAfter    time.Duration `json:"deleteAfter"`    // Permanently delete
+	ComplianceHold bool          `json:"complianceHold"` // Legal/compliance hold
+	PIIHandling    string        `json:"piiHandling"`    // anonymize, pseudonymize, delete
+	AuditRequired  bool          `json:"auditRequired"`  // Require audit log for operations
 }
 
 // DefaultRetentionPolicies returns the default retention policies for the platform
@@ -30,9 +30,9 @@ func DefaultRetentionPolicies() map[string]RetentionPolicy {
 	return map[string]RetentionPolicy{
 		"audit_logs": {
 			DataType:       "audit_logs",
-			HotRetention:   90 * 24 * time.Hour,  // 90 days
-			WarmRetention:  365 * 24 * time.Hour, // 1 year
-			ColdRetention:  7 * 365 * 24 * time.Hour, // 7 years
+			HotRetention:   90 * 24 * time.Hour,       // 90 days
+			WarmRetention:  365 * 24 * time.Hour,      // 1 year
+			ColdRetention:  7 * 365 * 24 * time.Hour,  // 7 years
 			DeleteAfter:    10 * 365 * 24 * time.Hour, // 10 years
 			ComplianceHold: true,
 			PIIHandling:    "pseudonymize",
@@ -40,9 +40,9 @@ func DefaultRetentionPolicies() map[string]RetentionPolicy {
 		},
 		"transactions": {
 			DataType:       "transactions",
-			HotRetention:   30 * 24 * time.Hour,  // 30 days
-			WarmRetention:  365 * 24 * time.Hour, // 1 year
-			ColdRetention:  7 * 365 * 24 * time.Hour, // 7 years
+			HotRetention:   30 * 24 * time.Hour,       // 30 days
+			WarmRetention:  365 * 24 * time.Hour,      // 1 year
+			ColdRetention:  7 * 365 * 24 * time.Hour,  // 7 years
 			DeleteAfter:    10 * 365 * 24 * time.Hour, // 10 years
 			ComplianceHold: true,
 			PIIHandling:    "anonymize",
@@ -50,9 +50,9 @@ func DefaultRetentionPolicies() map[string]RetentionPolicy {
 		},
 		"beneficiary_data": {
 			DataType:       "beneficiary_data",
-			HotRetention:   365 * 24 * time.Hour, // 1 year
-			WarmRetention:  3 * 365 * 24 * time.Hour, // 3 years
-			ColdRetention:  7 * 365 * 24 * time.Hour, // 7 years
+			HotRetention:   365 * 24 * time.Hour,      // 1 year
+			WarmRetention:  3 * 365 * 24 * time.Hour,  // 3 years
+			ColdRetention:  7 * 365 * 24 * time.Hour,  // 7 years
 			DeleteAfter:    10 * 365 * 24 * time.Hour, // 10 years
 			ComplianceHold: false,
 			PIIHandling:    "anonymize",
@@ -70,9 +70,9 @@ func DefaultRetentionPolicies() map[string]RetentionPolicy {
 		},
 		"notifications": {
 			DataType:       "notifications",
-			HotRetention:   30 * 24 * time.Hour,  // 30 days
-			WarmRetention:  90 * 24 * time.Hour,  // 90 days
-			ColdRetention:  365 * 24 * time.Hour, // 1 year
+			HotRetention:   30 * 24 * time.Hour,      // 30 days
+			WarmRetention:  90 * 24 * time.Hour,      // 90 days
+			ColdRetention:  365 * 24 * time.Hour,     // 1 year
 			DeleteAfter:    2 * 365 * 24 * time.Hour, // 2 years
 			ComplianceHold: false,
 			PIIHandling:    "delete",
@@ -80,9 +80,9 @@ func DefaultRetentionPolicies() map[string]RetentionPolicy {
 		},
 		"workflow_history": {
 			DataType:       "workflow_history",
-			HotRetention:   30 * 24 * time.Hour,  // 30 days
-			WarmRetention:  180 * 24 * time.Hour, // 180 days
-			ColdRetention:  365 * 24 * time.Hour, // 1 year
+			HotRetention:   30 * 24 * time.Hour,      // 30 days
+			WarmRetention:  180 * 24 * time.Hour,     // 180 days
+			ColdRetention:  365 * 24 * time.Hour,     // 1 year
 			DeleteAfter:    3 * 365 * 24 * time.Hour, // 3 years
 			ComplianceHold: false,
 			PIIHandling:    "anonymize",
@@ -90,9 +90,9 @@ func DefaultRetentionPolicies() map[string]RetentionPolicy {
 		},
 		"metrics": {
 			DataType:       "metrics",
-			HotRetention:   7 * 24 * time.Hour,   // 7 days (full resolution)
-			WarmRetention:  30 * 24 * time.Hour,  // 30 days (downsampled)
-			ColdRetention:  365 * 24 * time.Hour, // 1 year (aggregated)
+			HotRetention:   7 * 24 * time.Hour,       // 7 days (full resolution)
+			WarmRetention:  30 * 24 * time.Hour,      // 30 days (downsampled)
+			ColdRetention:  365 * 24 * time.Hour,     // 1 year (aggregated)
 			DeleteAfter:    2 * 365 * 24 * time.Hour, // 2 years
 			ComplianceHold: false,
 			PIIHandling:    "delete",
@@ -175,7 +175,7 @@ func DataRetentionWorkflow(ctx workflow.Context, input RetentionInput) (*Retenti
 	// Step 2: Check for compliance holds
 	if policy.ComplianceHold {
 		var hasHold bool
-		err = workflow.ExecuteActivity(ctx, CheckComplianceHoldActivity, input.DataType).Get(ctx, &hasHold)
+		err = workflow.ExecuteActivity(ctx, "CheckComplianceHoldActivity", input.DataType).Get(ctx, &hasHold)
 		if err != nil {
 			logger.Warn("Failed to check compliance hold, proceeding with caution", "error", err)
 		}
@@ -187,7 +187,7 @@ func DataRetentionWorkflow(ctx workflow.Context, input RetentionInput) (*Retenti
 
 	// Step 3: Move data to warm storage
 	var warmResult TierMoveResult
-	err = workflow.ExecuteActivity(ctx, MoveToWarmStorageActivity, MoveDataInput{
+	err = workflow.ExecuteActivity(ctx, "MoveToWarmStorageActivity", MoveDataInput{
 		DataType:  input.DataType,
 		OlderThan: policy.HotRetention,
 		DryRun:    input.DryRun,
@@ -202,7 +202,7 @@ func DataRetentionWorkflow(ctx workflow.Context, input RetentionInput) (*Retenti
 
 	// Step 4: Move data to cold storage
 	var coldResult TierMoveResult
-	err = workflow.ExecuteActivity(ctx, MoveToColdStorageActivity, MoveDataInput{
+	err = workflow.ExecuteActivity(ctx, "MoveToColdStorageActivity", MoveDataInput{
 		DataType:  input.DataType,
 		OlderThan: policy.WarmRetention,
 		DryRun:    input.DryRun,
@@ -218,7 +218,7 @@ func DataRetentionWorkflow(ctx workflow.Context, input RetentionInput) (*Retenti
 	// Step 5: Handle PII based on policy
 	if policy.PIIHandling == "anonymize" || policy.PIIHandling == "pseudonymize" {
 		var anonResult AnonymizeResult
-		err = workflow.ExecuteActivity(ctx, AnonymizeDataActivity, AnonymizeInput{
+		err = workflow.ExecuteActivity(ctx, "AnonymizeDataActivity", AnonymizeInput{
 			DataType:  input.DataType,
 			OlderThan: policy.ColdRetention,
 			Method:    policy.PIIHandling,
@@ -235,7 +235,7 @@ func DataRetentionWorkflow(ctx workflow.Context, input RetentionInput) (*Retenti
 	// Step 6: Delete expired data (if no compliance hold)
 	if !policy.ComplianceHold {
 		var deleteResult DeleteResult
-		err = workflow.ExecuteActivity(ctx, DeleteExpiredDataActivity, DeleteInput{
+		err = workflow.ExecuteActivity(ctx, "DeleteExpiredDataActivity", DeleteInput{
 			DataType:  input.DataType,
 			OlderThan: policy.DeleteAfter,
 			DryRun:    input.DryRun,
@@ -251,7 +251,7 @@ func DataRetentionWorkflow(ctx workflow.Context, input RetentionInput) (*Retenti
 
 	// Step 7: Create audit log
 	if policy.AuditRequired && !input.DryRun {
-		err = workflow.ExecuteActivity(ctx, CreateRetentionAuditLogActivity, AuditLogInput{
+		err = workflow.ExecuteActivity(ctx, "CreateRetentionAuditLogActivity", AuditLogInput{
 			DataType:    input.DataType,
 			InitiatedBy: input.InitiatedBy,
 			Result:      result,
@@ -354,10 +354,10 @@ type AuditLogInput struct {
 
 // RetentionActivities implements the retention activities
 type RetentionActivities struct {
-	db            *sql.DB
-	warmStorage   StorageClient
-	coldStorage   StorageClient
-	auditLogger   AuditLogger
+	db          *sql.DB
+	warmStorage StorageClient
+	coldStorage StorageClient
+	auditLogger AuditLogger
 }
 
 // StorageClient interface for storage operations
@@ -705,11 +705,11 @@ func joinStrings(strs []string, sep string) string {
 
 // StorageClassConfig defines storage class configurations for Kubernetes
 type StorageClassConfig struct {
-	Name            string            `json:"name"`
-	Provisioner     string            `json:"provisioner"`
-	ReclaimPolicy   string            `json:"reclaimPolicy"`
-	VolumeBindingMode string          `json:"volumeBindingMode"`
-	Parameters      map[string]string `json:"parameters"`
+	Name              string            `json:"name"`
+	Provisioner       string            `json:"provisioner"`
+	ReclaimPolicy     string            `json:"reclaimPolicy"`
+	VolumeBindingMode string            `json:"volumeBindingMode"`
+	Parameters        map[string]string `json:"parameters"`
 }
 
 // GetStorageClassConfigs returns storage class configurations for tiered storage

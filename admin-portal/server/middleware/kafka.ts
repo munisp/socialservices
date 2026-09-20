@@ -1,4 +1,5 @@
 import { Kafka, Producer, Consumer, EachMessagePayload, logLevel } from "kafkajs";
+import { withDLQ } from "./kafkaDLQ";
 
 /**
  * Kafka Event Streaming Integration
@@ -120,7 +121,8 @@ export async function publishEvent<T>(
 ): Promise<void> {
   const producer = await getProducer();
   if (!producer) {
-    console.warn(`[Kafka] Producer not available, skipping event: ${topic}`);
+    if (process.env.NODE_ENV === "production") throw new Error(`Kafka producer unavailable for required event ${topic}`);
+    console.warn(`[Kafka] Producer not available, skipping development event: ${topic}`);
     return;
   }
 
@@ -195,12 +197,14 @@ export async function createConsumer(
           const event: DomainEvent = JSON.parse(message.value.toString());
           console.log(`[Kafka] Processing event: ${event.type} (${event.id})`);
 
-          await handler(event);
+          const processed = await withDLQ(topic, partition, message.offset, message.key?.toString(), event,
+            Object.fromEntries(Object.entries(message.headers ?? {}).map(([key,value]) => [key,value?.toString() ?? ""])), groupId, groupId, () => handler(event));
+          if (processed === null) console.error(`[Kafka] Event moved to DLQ after retries: ${event.id}`);
 
           console.log(`[Kafka] Event processed successfully: ${event.id}`);
         } catch (error) {
           console.error(`[Kafka] Error processing message from ${topic}:`, error);
-          // Dead letter queue would go here
+          throw error;
         }
       },
     });

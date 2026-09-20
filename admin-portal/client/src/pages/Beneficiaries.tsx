@@ -57,7 +57,8 @@ export default function Beneficiaries() {
     },
   });
 
-  const displayData = searchQuery.length > 0 ? searchResults : beneficiaries;
+  const page = searchQuery.length > 0 ? searchResults : beneficiaries;
+  const displayData = page?.results ?? [];
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -167,13 +168,13 @@ export default function Beneficiaries() {
           <CardHeader>
             <CardTitle>All Beneficiaries</CardTitle>
             <CardDescription>
-              {displayData?.length || 0} beneficiaries found
+              {page?.total ?? 0} beneficiaries found
             </CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
               <div className="text-center py-8 text-muted-foreground">Loading...</div>
-            ) : !displayData || displayData.length === 0 ? (
+            ) : displayData.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 No beneficiaries found
               </div>

@@ -262,7 +262,7 @@ export function JourneyDashboard() {
               <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            Object.entries(journeysByCategory).map(([category, journeys]) => (
+            (Object.entries(journeysByCategory) as Array<[string, JourneyContract[]]>).map(([category, journeys]) => (
               <div key={category} className="space-y-3">
                 <div className="flex items-center gap-2">
                   <div className={`p-2 rounded-lg ${categoryColors[category]}`}>

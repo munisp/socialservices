@@ -1,6 +1,7 @@
 import { getDb } from "../db";
 import { eventSnapshots, eventReplays, eventReplayLogs } from "../../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
+import { Kafka, type Consumer } from "kafkajs";
 
 /**
  * Event Replay System
@@ -120,6 +121,9 @@ export async function startEventReplay(
   if (!db) return null;
 
   try {
+    if (!process.env.KAFKA_BROKERS) throw new Error("KAFKA_BROKERS is required for event replay");
+    if (!topics.length) throw new Error("At least one Kafka topic is required");
+    if (options?.endOffset === undefined) throw new Error("A bounded endOffset is required; unbounded replay is refused");
     const result = await db.insert(eventReplays).values({
       replayName,
       snapshotId: options?.snapshotId || null,
@@ -152,7 +156,7 @@ export async function startEventReplay(
 async function processEventReplay(replayId: number): Promise<void> {
   const db = await getDb();
   if (!db) return;
-
+  let consumer: Consumer | null = null;
   try {
     // Update status to running
     await db
@@ -172,50 +176,57 @@ async function processEventReplay(replayId: number): Promise<void> {
     }
 
     const replay = replayResults[0];
-    const topics = JSON.parse(replay.topics);
-
-    // Simulate event processing (in production, this would consume from Kafka)
-    const totalEvents = 1000; // Placeholder
+    const topics = JSON.parse(replay.topics) as string[];
+    const requestedStart = Number(replay.startOffset ?? "0");
+    const requestedEnd = Number(replay.endOffset);
+    if (!Number.isSafeInteger(requestedStart) || !Number.isSafeInteger(requestedEnd) || requestedEnd < requestedStart) {
+      throw new Error("Replay offsets must be a valid inclusive integer range");
+    }
+    const kafka = new Kafka({ clientId: `event-replay-${replayId}`, brokers: process.env.KAFKA_BROKERS!.split(",") });
+    const admin = kafka.admin();
+    await admin.connect();
+    const ranges = new Map<string, { start: number; end: number }>();
+    let totalEvents = 0;
+    try {
+      for (const topic of topics) {
+        for (const offset of await admin.fetchTopicOffsets(topic)) {
+          const low = Number(offset.low); const highExclusive = Number(offset.high);
+          const start = Math.max(low, requestedStart); const end = Math.min(highExclusive - 1, requestedEnd);
+          ranges.set(`${topic}:${offset.partition}`, { start, end });
+          if (end >= start) totalEvents += end - start + 1;
+        }
+      }
+    } finally {
+      await admin.disconnect();
+    }
     await db
       .update(eventReplays)
       .set({ eventsTotal: totalEvents })
       .where(eq(eventReplays.id, replayId));
-
-    for (let i = 0; i < totalEvents; i++) {
-      // Process event (placeholder)
-      const eventOffset = `${i}`;
-      const eventType = topics[i % topics.length];
-
-      // Log event processing
-      await db.insert(eventReplayLogs).values({
-        replayId,
-        eventOffset,
-        eventType,
-        eventData: JSON.stringify({ placeholder: true }),
-        success: true,
-      });
-
-      // Update progress
-      const progress = Math.floor(((i + 1) / totalEvents) * 100);
-      await db
-        .update(eventReplays)
-        .set({
-          eventsProcessed: i + 1,
-          progress,
-        })
-        .where(eq(eventReplays.id, replayId));
-
-      // Small delay to simulate processing
-      if (i % 100 === 0) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
+    if (totalEvents > 0) {
+      consumer = kafka.consumer({ groupId: `event-replay-${replayId}-${Date.now()}` });
+      await consumer.connect();
+      for (const topic of topics) await consumer.subscribe({ topic, fromBeginning: true });
+      let processed = 0;
+      await consumer.run({ autoCommit: false, eachMessage: async ({ topic, partition, message }) => {
+        const range = ranges.get(`${topic}:${partition}`); const offset = Number(message.offset);
+        if (!range || offset < range.start || offset > range.end) return;
+        let eventData: unknown;
+        try { eventData = JSON.parse(message.value?.toString() ?? "null"); } catch { eventData = { raw: message.value?.toString("base64") ?? null }; }
+        const filter = replay.eventFilter ? JSON.parse(replay.eventFilter) as Record<string, unknown> : undefined;
+        const matches = !filter || Object.entries(filter).every(([key, value]) => (eventData as Record<string, unknown>)?.[key] === value);
+        if (matches) await db.insert(eventReplayLogs).values({ replayId, eventOffset: `${topic}:${partition}:${message.offset}`, eventType: topic, eventData: JSON.stringify(eventData), success: true });
+        processed += 1;
+        await consumer!.commitOffsets([{ topic, partition, offset: String(offset + 1) }]);
+        if (processed % 25 === 0 || processed === totalEvents) await db.update(eventReplays).set({ eventsProcessed: processed, progress: Math.floor(processed / totalEvents * 100) }).where(eq(eventReplays.id, replayId));
+        if (processed >= totalEvents) await consumer!.stop();
+      }});
     }
-
-    // Mark as completed
     await db
       .update(eventReplays)
       .set({
         status: "completed",
+        progress: 100,
         completedAt: new Date(),
       })
       .where(eq(eventReplays.id, replayId));
@@ -232,6 +243,8 @@ async function processEventReplay(replayId: number): Promise<void> {
         completedAt: new Date(),
       })
       .where(eq(eventReplays.id, replayId));
+  } finally {
+    if (consumer) await consumer.disconnect().catch(() => undefined);
   }
 }
 

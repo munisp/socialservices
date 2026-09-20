@@ -1,6 +1,9 @@
 {
-  "version": "fraud-ml-42-20000",
+  "version": "fraud-ml-20260920T002126Z-43-50000",
   "model_type": "pytorch_mlp",
+  "task": "fraud_detection",
+  "framework": "torch",
+  "framework_version": "2.14.0+cu130",
   "features": [
     "amount_ngn",
     "hour",
@@ -14,13 +17,352 @@
   "weights": "fraud_mlp.pt",
   "preprocess": "preprocess.pt",
   "metrics": {
-    "accuracy": 0.63125,
-    "precision": 0.12800519818063677,
-    "recall": 0.5969696969696969,
-    "f1": 0.21080791867308724,
-    "support": 4000
+    "accuracy": 0.9351,
+    "precision": 0.456,
+    "recall": 0.2775974025974026,
+    "f1": 0.3451059535822402,
+    "brier": 0.13705633580684662,
+    "support": 10000,
+    "threshold": 0.6,
+    "tp": 171,
+    "tn": 9180,
+    "fp": 204,
+    "fn": 445
   },
-  "trained_on": "synthetic Nigerian-like data only",
-  "seed": 42,
-  "framework": "torch"
+  "dataset_kind": "synthetic",
+  "training_rows": 50000,
+  "positive_rate": 0.07677999883890152,
+  "split": "temporal_80_20",
+  "seed": 43,
+  "epochs_completed": 35,
+  "training_history": [
+    {
+      "epoch": 1,
+      "train_loss": 1.2320078405380248,
+      "validation_loss": 1.0337963104248047
+    },
+    {
+      "epoch": 2,
+      "train_loss": 1.1423024633407592,
+      "validation_loss": 0.9874296188354492
+    },
+    {
+      "epoch": 3,
+      "train_loss": 1.0992690670967102,
+      "validation_loss": 0.9893302917480469
+    },
+    {
+      "epoch": 4,
+      "train_loss": 1.090787712097168,
+      "validation_loss": 0.9914588928222656
+    },
+    {
+      "epoch": 5,
+      "train_loss": 1.0886084085464478,
+      "validation_loss": 0.9830891489982605
+    },
+    {
+      "epoch": 6,
+      "train_loss": 1.0869379051208496,
+      "validation_loss": 0.9892815351486206
+    },
+    {
+      "epoch": 7,
+      "train_loss": 1.0870229309082031,
+      "validation_loss": 0.9885951280593872
+    },
+    {
+      "epoch": 8,
+      "train_loss": 1.0857528739929199,
+      "validation_loss": 0.9823576211929321
+    },
+    {
+      "epoch": 9,
+      "train_loss": 1.0837109457015992,
+      "validation_loss": 0.9812904000282288
+    },
+    {
+      "epoch": 10,
+      "train_loss": 1.0823615762710572,
+      "validation_loss": 0.9862257838249207
+    },
+    {
+      "epoch": 11,
+      "train_loss": 1.0835163911819459,
+      "validation_loss": 0.9873605370521545
+    },
+    {
+      "epoch": 12,
+      "train_loss": 1.0817150055885314,
+      "validation_loss": 0.9828628897666931
+    },
+    {
+      "epoch": 13,
+      "train_loss": 1.0827465599060058,
+      "validation_loss": 0.9804632663726807
+    },
+    {
+      "epoch": 14,
+      "train_loss": 1.0820295886993407,
+      "validation_loss": 0.988349437713623
+    },
+    {
+      "epoch": 15,
+      "train_loss": 1.0809064653396607,
+      "validation_loss": 0.980841875076294
+    },
+    {
+      "epoch": 16,
+      "train_loss": 1.0794706409454347,
+      "validation_loss": 0.9868634939193726
+    },
+    {
+      "epoch": 17,
+      "train_loss": 1.079367782020569,
+      "validation_loss": 0.9784116148948669
+    },
+    {
+      "epoch": 18,
+      "train_loss": 1.0810723589897155,
+      "validation_loss": 0.976660966873169
+    },
+    {
+      "epoch": 19,
+      "train_loss": 1.0800720630645753,
+      "validation_loss": 0.9785425066947937
+    },
+    {
+      "epoch": 20,
+      "train_loss": 1.0785851152420043,
+      "validation_loss": 0.9776912331581116
+    },
+    {
+      "epoch": 21,
+      "train_loss": 1.0780139818191528,
+      "validation_loss": 0.9794341921806335
+    },
+    {
+      "epoch": 22,
+      "train_loss": 1.0786876852035523,
+      "validation_loss": 0.9856207966804504
+    },
+    {
+      "epoch": 23,
+      "train_loss": 1.0775720098495483,
+      "validation_loss": 0.9781423807144165
+    },
+    {
+      "epoch": 24,
+      "train_loss": 1.0776085350036622,
+      "validation_loss": 0.9810026288032532
+    },
+    {
+      "epoch": 25,
+      "train_loss": 1.0780432088851928,
+      "validation_loss": 0.9767963886260986
+    },
+    {
+      "epoch": 26,
+      "train_loss": 1.0784767246246338,
+      "validation_loss": 0.9742233157157898
+    },
+    {
+      "epoch": 27,
+      "train_loss": 1.0771566402435302,
+      "validation_loss": 0.9757413864135742
+    },
+    {
+      "epoch": 28,
+      "train_loss": 1.0761471153259277,
+      "validation_loss": 0.9719194173812866
+    },
+    {
+      "epoch": 29,
+      "train_loss": 1.078161187171936,
+      "validation_loss": 0.9734695553779602
+    },
+    {
+      "epoch": 30,
+      "train_loss": 1.0766057834625244,
+      "validation_loss": 0.9763102531433105
+    },
+    {
+      "epoch": 31,
+      "train_loss": 1.0774335121154786,
+      "validation_loss": 0.9764372110366821
+    },
+    {
+      "epoch": 32,
+      "train_loss": 1.0757838817596435,
+      "validation_loss": 0.9791331887245178
+    },
+    {
+      "epoch": 33,
+      "train_loss": 1.07735342130661,
+      "validation_loss": 0.9758927822113037
+    },
+    {
+      "epoch": 34,
+      "train_loss": 1.0781520935058593,
+      "validation_loss": 0.9724963903427124
+    },
+    {
+      "epoch": 35,
+      "train_loss": 1.0763195175170899,
+      "validation_loss": 0.9749703407287598
+    }
+  ],
+  "training_data_sha256": "1a42748c5b7726a5baa84a9800da4833ca9677008167007f8f49972ded0d621e",
+  "training_window": {
+    "first": "2024-01-01T04:00:00+00:00",
+    "last": "2024-12-30T22:00:00+00:00"
+  },
+  "feature_reference": {
+    "amount_ngn": {
+      "mean": 10030.5419921875,
+      "std": 7951.68408203125,
+      "quantiles": [
+        500.0,
+        3000.0,
+        4800.0,
+        7900.0,
+        12800.0,
+        19500.0,
+        135000.0
+      ]
+    },
+    "hour": {
+      "mean": 13.149299621582031,
+      "std": 5.015108585357666,
+      "quantiles": [
+        0.0,
+        7.0,
+        9.0,
+        14.0,
+        17.0,
+        19.0,
+        23.0
+      ]
+    },
+    "day_of_year": {
+      "mean": 182.2366943359375,
+      "std": 105.58810424804688,
+      "quantiles": [
+        0.0,
+        36.0,
+        91.0,
+        182.0,
+        274.0,
+        329.0,
+        364.0
+      ]
+    },
+    "velocity_24h": {
+      "mean": 0.03269999846816063,
+      "std": 0.1814149022102356,
+      "quantiles": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        2.0
+      ]
+    },
+    "device_reuse": {
+      "mean": 0.13305999338626862,
+      "std": 0.3396429717540741,
+      "quantiles": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0
+      ]
+    },
+    "distance_km": {
+      "mean": 15.087258338928223,
+      "std": 23.678022384643555,
+      "quantiles": [
+        0.0,
+        0.0,
+        0.13375000655651093,
+        9.772500038146973,
+        19.77174949645996,
+        29.93509864807129,
+        248.18600463867188
+      ]
+    },
+    "beneficiary_age_days": {
+      "mean": 93.94196319580078,
+      "std": 99.81377410888672,
+      "quantiles": [
+        1.0,
+        1.0,
+        1.0,
+        64.0,
+        162.0,
+        249.0,
+        393.0
+      ]
+    },
+    "mcc_risk": {
+      "mean": 0.29980000853538513,
+      "std": 0.5898872017860413,
+      "quantiles": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        2.0
+      ]
+    }
+  },
+  "weights_sha256": "a0ea29ff28bb6124e7cd7560cdaded757404205621244eb0c7bcb18c9e675872",
+  "preprocess_sha256": "a352b8d679cd61d68553cb58a946ec4a2218cfe9b725ce54b878ca99b3b3796f",
+  "cpu_inference": true,
+  "production_validated": false,
+  "limitations": [
+    "Synthetic metrics are not evidence of real fraud performance"
+  ],
+  "distributed_training": {
+    "engine": "ray",
+    "trials": [
+      {
+        "config": {
+          "learning_rate": 0.001,
+          "batch_size": 256,
+          "seed": 41
+        },
+        "f1": 0.34408602150537637
+      },
+      {
+        "config": {
+          "learning_rate": 0.002,
+          "batch_size": 512,
+          "seed": 42
+        },
+        "f1": 0.3407407407407407
+      },
+      {
+        "config": {
+          "learning_rate": 0.0005,
+          "batch_size": 1024,
+          "seed": 43
+        },
+        "f1": 0.3451059535822402
+      }
+    ],
+    "selected": {
+      "learning_rate": 0.0005,
+      "batch_size": 1024,
+      "seed": 43
+    }
+  },
+  "dataset_serialization": "csv_utf8_lf"
 }

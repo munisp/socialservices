@@ -6,6 +6,7 @@
  */
 
 import { v4 as uuidv4 } from "uuid";
+import { Kafka, type Producer } from "kafkajs";
 
 export interface DLQMessage {
   id: string;
@@ -49,6 +50,13 @@ const DEFAULT_DLQ_CONFIG: DLQConfig = {
 
 // In-memory DLQ store (production would use Kafka)
 const dlqStore = new Map<string, DLQMessage[]>();
+let dlqProducer: Producer | null = null;
+async function getDLQProducer(): Promise<Producer | null> {
+  const brokers = process.env.KAFKA_BROKERS;
+  if (!brokers) return null;
+  if (!dlqProducer) { dlqProducer = new Kafka({ clientId: "admin-portal-dlq", brokers: brokers.split(",") }).producer({ allowAutoTopicCreation: true }); await dlqProducer.connect(); }
+  return dlqProducer;
+}
 
 /**
  * Get DLQ topic name for a given topic
@@ -86,11 +94,9 @@ export async function sendToDLQ(
     `originalTopic=${message.originalTopic}, error=${message.error.message}`
   );
 
-  // In production, this would publish to Kafka DLQ topic
-  // await kafkaProducer.send({
-  //   topic: dlqTopic,
-  //   messages: [{ value: JSON.stringify(dlqMessage) }],
-  // });
+  const producer = await getDLQProducer();
+  if (producer) await producer.send({ topic: dlqTopic, messages: [{ key: dlqMessage.originalKey, value: JSON.stringify(dlqMessage) }] });
+  else if (process.env.NODE_ENV === "production") throw new Error("KAFKA_BROKERS is required for durable dead-letter storage");
 
   return dlqMessage.id;
 }

@@ -1,0 +1,36 @@
+{
+  "version": "fraud-gnn-20260920T001851Z-62-1800",
+  "task": "fraud_ring_detection",
+  "model_type": "pytorch_graphsage",
+  "framework": "torch",
+  "features": [
+    "transaction_volume",
+    "unique_devices",
+    "unique_merchants",
+    "cashout_ratio",
+    "velocity",
+    "account_age_days"
+  ],
+  "weights": "graphsage_fraud.pt",
+  "graph_snapshot": "graph_snapshot.pt",
+  "metrics": {
+    "accuracy": 0.9666666666666667,
+    "precision": 0.8095238095238095,
+    "recall": 0.68,
+    "f1": 0.7391304347826089,
+    "brier": 0.06181955337524414,
+    "support": 360,
+    "threshold": 0.5,
+    "tp": 17,
+    "tn": 331,
+    "fp": 4,
+    "fn": 8
+  },
+  "dataset_kind": "synthetic_graph",
+  "nodes": 1800,
+  "edges": 11066,
+  "seed": 62,
+  "weights_sha256": "146104a009e8a136907e4a4b3723a974bf1491d0139abc51d754ea30dc93a935",
+  "cpu_inference": true,
+  "production_validated": false
+}

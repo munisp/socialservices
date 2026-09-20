@@ -2,6 +2,9 @@
  * Middleware Index
  * Exports all middleware for easy import across the application
  */
+import { getAllCircuitBreakerHealth } from "./circuitBreaker";
+import { keycloakHealthCheck } from "./keycloak";
+import { permifyHealthCheck, writeAuthorizationSchema } from "./permify";
 
 // Rate Limiting
 export {
@@ -126,28 +129,6 @@ export {
   createDataAccessMiddleware,
 } from "./dataProtection";
 
-// Notifications
-export {
-  // Queue Management
-  createNotification,
-  queueNotification,
-  // Delivery Tracking
-  handleDeliveryWebhook,
-  onDeliveryStatus,
-  getNotificationStatus,
-  getUserNotifications,
-  // Dead Letter Queue
-  getDeadLetterQueue,
-  retryFromDeadLetterQueue,
-  // User Preferences
-  setUserPreference,
-  getUserPreferences,
-  // Metrics
-  getNotificationMetrics,
-  // Cleanup
-  cleanupOldRecords as cleanupOldNotifications,
-} from "./notifications";
-
 // Permify Authorization
 export {
   getPermifyClient,
@@ -171,11 +152,14 @@ export {
 
 // Keycloak Authentication
 export {
-  getKeycloakClient,
-  exchangeCodeForTokens,
-  verifyAccessToken,
+  getKeycloakConfig,
+  getKeycloakLoginUrl,
+  exchangeCodeForToken,
+  verifyToken,
   refreshAccessToken,
-  extractUserFromToken,
+  logoutUser,
+  createKeycloakUser,
+  assignRoleToUser,
   keycloakHealthCheck,
 } from "./keycloak";
 

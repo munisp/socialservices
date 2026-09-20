@@ -12,10 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/admin-portal/orchestrator/federation"
-	"github.com/admin-portal/orchestrator/interop"
-	"github.com/admin-portal/orchestrator/loadtest"
-	"github.com/admin-portal/orchestrator/offline"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -60,22 +56,14 @@ func init() {
 }
 
 type APIServer struct {
-	offlineService     *offline.OfflineSyncService
-	federationService  *federation.NationalIDFederation
-	interopService     *interop.InteroperabilityLayer
-	loadTestService    *loadtest.LoadTestFramework
-	journeyHandler     *JourneyHandler
-	server             *http.Server
-	isShuttingDown     atomic.Bool
+	journeyHandler *JourneyHandler
+	server         *http.Server
+	isShuttingDown atomic.Bool
 }
 
 func NewAPIServer() *APIServer {
 	return &APIServer{
-		offlineService:    offline.NewOfflineSyncService(),
-		federationService: federation.NewNationalIDFederation(),
-		interopService:    interop.NewInteroperabilityLayer(),
-		loadTestService:   loadtest.NewLoadTestFramework(),
-		journeyHandler:    NewJourneyHandler(),
+		journeyHandler: NewJourneyHandler(),
 	}
 }
 
@@ -87,11 +75,11 @@ func (s *APIServer) Start(addr string) error {
 	mux.Handle("/api/federation/", s.metricsMiddleware(http.HandlerFunc(s.handleFederation)))
 	mux.Handle("/api/interop/", s.metricsMiddleware(http.HandlerFunc(s.handleInterop)))
 	mux.Handle("/api/loadtest/", s.metricsMiddleware(http.HandlerFunc(s.handleLoadTest)))
-	
+
 	// Journey orchestration routes
 	mux.Handle("/api/journeys/", s.metricsMiddleware(http.HandlerFunc(s.journeyHandler.HandleJourneys)))
 	mux.Handle("/api/journey-contracts", s.metricsMiddleware(http.HandlerFunc(s.journeyHandler.HandleJourneyContracts)))
-	
+
 	// Health and metrics endpoints
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ready", s.handleReady)
@@ -128,7 +116,7 @@ func (s *APIServer) metricsMiddleware(next http.Handler) http.Handler {
 
 		duration := time.Since(start).Seconds()
 		endpoint := strings.Split(r.URL.Path, "/")[2] // Get the API category
-		
+
 		httpRequestsTotal.WithLabelValues(r.Method, endpoint, http.StatusText(wrapped.statusCode)).Inc()
 		httpRequestDuration.WithLabelValues(r.Method, endpoint).Observe(duration)
 	})
@@ -568,14 +556,14 @@ func (s *APIServer) getLoadTestStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) getLoadTestMetrics(w http.ResponseWriter, r *http.Request) {
 	metrics := map[string]interface{}{
-		"testId":       "test-123",
-		"currentRPS":   1000,
-		"latencyP50":   50,
-		"latencyP95":   150,
-		"latencyP99":   300,
-		"successRate":  99.5,
-		"errorRate":    0.5,
-		"activeUsers":  100,
+		"testId":        "test-123",
+		"currentRPS":    1000,
+		"latencyP50":    50,
+		"latencyP95":    150,
+		"latencyP99":    300,
+		"successRate":   99.5,
+		"errorRate":     0.5,
+		"activeUsers":   100,
 		"totalRequests": 50000,
 	}
 	json.NewEncoder(w).Encode(metrics)
@@ -590,14 +578,14 @@ func (s *APIServer) stopLoadTest(w http.ResponseWriter, r *http.Request) {
 
 func (s *APIServer) getLoadTestReport(w http.ResponseWriter, r *http.Request) {
 	report := map[string]interface{}{
-		"testId":     "test-123",
-		"summary":    "Test completed successfully",
+		"testId":  "test-123",
+		"summary": "Test completed successfully",
 		"sloResults": map[string]bool{
-			"latencyP50": true,
-			"latencyP95": true,
-			"latencyP99": true,
+			"latencyP50":  true,
+			"latencyP95":  true,
+			"latencyP99":  true,
 			"successRate": true,
-			"errorRate": true,
+			"errorRate":   true,
 		},
 	}
 	json.NewEncoder(w).Encode(report)
